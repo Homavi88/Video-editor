@@ -79,6 +79,39 @@ export function luminaMediaApi(): Plugin {
             return;
           }
 
+          // Range-capable media stream for HTMLVideoElement / Web Audio / WebCodecs.
+          if (url.pathname === "/api/stream") {
+            const filePath = assertAllowedPath(need(url, "path"), ROOTS);
+            if (!fs.existsSync(filePath)) return bad(res, "file not found", 404);
+            const stat = fs.statSync(filePath);
+            const mime = mimeFor(filePath);
+            const range = req.headers.range;
+            res.setHeader("Accept-Ranges", "bytes");
+            res.setHeader("Content-Type", mime);
+            res.setHeader("Cache-Control", "private, max-age=60");
+            if (range) {
+              const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+              if (!m) return bad(res, "invalid range", 416);
+              const start = m[1] ? Number(m[1]) : 0;
+              const end = m[2] ? Number(m[2]) : stat.size - 1;
+              if (start >= stat.size || end >= stat.size || start > end) {
+                res.statusCode = 416;
+                res.setHeader("Content-Range", `bytes */${stat.size}`);
+                res.end();
+                return;
+              }
+              res.statusCode = 206;
+              res.setHeader("Content-Range", `bytes ${start}-${end}/${stat.size}`);
+              res.setHeader("Content-Length", String(end - start + 1));
+              fs.createReadStream(filePath, { start, end }).pipe(res);
+            } else {
+              res.statusCode = 200;
+              res.setHeader("Content-Length", String(stat.size));
+              fs.createReadStream(filePath).pipe(res);
+            }
+            return;
+          }
+
           if (url.pathname === "/api/proxy" && req.method === "POST") {
             const body = JSON.parse(await readBody(req)) as { path: string };
             const filePath = assertAllowedPath(body.path, ROOTS);
@@ -178,6 +211,25 @@ function need(url: URL, key: string): string {
   const v = url.searchParams.get(key);
   if (!v) throw new Error(`${key} required`);
   return v;
+}
+
+function mimeFor(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const map: Record<string, string> = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+  };
+  return map[ext] ?? "application/octet-stream";
 }
 
 function json(res: import("http").ServerResponse, data: unknown): void {

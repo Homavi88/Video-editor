@@ -163,3 +163,8 @@ export async function exportSequenceApi(input: {
 export function isFileBacked(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
+
+/** HTTP URL for HTMLVideoElement / Audio / Range streaming via Vite media API. */
+export function mediaStreamUrl(filePath: string): string {
+  return `/api/stream?path=${encodeURIComponent(filePath)}`;
+}

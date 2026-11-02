@@ -140,8 +140,9 @@ function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
       const out = i === vLabels.length - 1 ? "vout" : `xf${i}`;
       if (fade > 0.01) {
         const offset = Math.max(0, currentDur - fade);
+        const xfadeName = xfadeNameFor(prev.transitionOutId);
         filterParts.push(
-          `${current}${nextLabel}xfade=transition=fade:duration=${fade.toFixed(3)}:offset=${offset.toFixed(3)}[${out}]`,
+          `${current}${nextLabel}xfade=transition=${xfadeName}:duration=${fade.toFixed(3)}:offset=${offset.toFixed(3)}[${out}]`,
         );
         currentDur = currentDur + nextDur - fade;
       } else {
@@ -364,4 +365,25 @@ function isFilePath(p: string): boolean {
 
 function hasAnyCrossfade(clips: Array<{ clip: Clip }>): boolean {
   return clips.some(({ clip }) => Boolean(clip.transitionOutId));
+}
+
+function xfadeNameFor(presetId: string | undefined): string {
+  switch (presetId) {
+    case "wipeLeft":
+      return "wipeleft";
+    case "wipeRight":
+      return "wiperight";
+    case "wipeUp":
+      return "wipeup";
+    case "wipeDown":
+      return "wipedown";
+    case "slideLeft":
+      return "slideleft";
+    case "dipToBlack":
+      return "fadeblack";
+    case "dipToWhite":
+      return "fadewhite";
+    default:
+      return "fade";
+  }
 }

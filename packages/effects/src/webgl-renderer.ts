@@ -4,12 +4,16 @@
  */
 
 import {
+  BLEND_FRAG,
   BLIT_FRAG,
   COLOR_LGG_FRAG,
   CROSSFADE_FRAG,
   FULLSCREEN_VERT,
   GAUSSIAN_BLUR_FRAG,
+  MASK_FRAG,
   VIGNETTE_FRAG,
+  WIPE_LEFT_FRAG,
+  WIPE_RIGHT_FRAG,
 } from "./shaders.js";
 
 export interface RendererStats {
@@ -24,6 +28,10 @@ export class WebGLPreviewRenderer {
   private readonly lgg: Program;
   private readonly vignette: Program;
   private readonly crossfade: Program;
+  private readonly wipeLeft: Program;
+  private readonly wipeRight: Program;
+  private readonly blend: Program;
+  private readonly mask: Program;
   private readonly quad: WebGLBuffer;
   private readonly texture: WebGLTexture;
   private width: number;
@@ -31,7 +39,7 @@ export class WebGLPreviewRenderer {
   readonly stats: RendererStats = { frames: 0, lastMs: 0 };
 
   constructor(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
+    const gl = canvas.getContext("webgl2", { antialias: false, alpha: true, premultipliedAlpha: false });
     if (!gl) throw new Error("WebGL2 unavailable");
     this.gl = gl;
     this.width = canvas.width;
@@ -41,6 +49,10 @@ export class WebGLPreviewRenderer {
     this.lgg = createProgram(gl, FULLSCREEN_VERT, COLOR_LGG_FRAG);
     this.vignette = createProgram(gl, FULLSCREEN_VERT, VIGNETTE_FRAG);
     this.crossfade = createProgram(gl, FULLSCREEN_VERT, CROSSFADE_FRAG);
+    this.wipeLeft = createProgram(gl, FULLSCREEN_VERT, WIPE_LEFT_FRAG);
+    this.wipeRight = createProgram(gl, FULLSCREEN_VERT, WIPE_RIGHT_FRAG);
+    this.blend = createProgram(gl, FULLSCREEN_VERT, BLEND_FRAG);
+    this.mask = createProgram(gl, FULLSCREEN_VERT, MASK_FRAG);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -69,6 +81,59 @@ export class WebGLPreviewRenderer {
     });
     this.stats.frames += 1;
     this.stats.lastMs = performance.now() - t0;
+  }
+
+  /** Uploads an ImageBitmap / video frame into the texture and blits. */
+  drawImageSource(
+    source: TexImageSource,
+    opacity = 1,
+    blendMode: "normal" | "multiply" | "screen" | "overlay" | "add" = "normal",
+  ): void {
+    const t0 = performance.now();
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    const mode =
+      blendMode === "multiply"
+        ? 1
+        : blendMode === "screen"
+          ? 2
+          : blendMode === "overlay"
+            ? 3
+            : blendMode === "add"
+              ? 4
+              : 0;
+    this.drawTexture(this.texture, this.blend, (p) => {
+      gl.uniform1f(p.uniforms.u_opacity!, opacity);
+      gl.uniform1i(p.uniforms.u_blend!, mode);
+    });
+    this.stats.frames += 1;
+    this.stats.lastMs = performance.now() - t0;
+  }
+
+  applyRectMask(
+    bounds: { x: number; y: number; w: number; h: number },
+    feather: number,
+    inverted: boolean,
+    kind: "rect" | "ellipse" = "rect",
+  ): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.mask, (p) => {
+      gl.uniform4f(p.uniforms.u_bounds!, bounds.x, bounds.y, bounds.w, bounds.h);
+      gl.uniform1f(p.uniforms.u_feather!, Math.max(0, feather) / 1080);
+      gl.uniform1f(p.uniforms.u_invert!, inverted ? 1 : 0);
+      gl.uniform1i(p.uniforms.u_kind!, kind === "ellipse" ? 1 : 0);
+    });
+  }
+
+  drawTransition(kind: "crossfade" | "wipeLeft" | "wipeRight", progress: number): void {
+    const gl = this.gl;
+    const program =
+      kind === "wipeLeft" ? this.wipeLeft : kind === "wipeRight" ? this.wipeRight : this.crossfade;
+    this.drawTexture(this.texture, program, (p) => {
+      gl.uniform1f(p.uniforms.progress!, progress);
+      if (p.uniforms.to) gl.uniform1i(p.uniforms.to, 0);
+    });
   }
 
   /** Draws SMPTE-like color bars procedurally into a texture then blits. */
@@ -199,6 +264,11 @@ function createProgram(gl: WebGL2RenderingContext, vertSrc: string, fragSrc: str
       from: gl.getUniformLocation(program, "from"),
       to: gl.getUniformLocation(program, "to"),
       progress: gl.getUniformLocation(program, "progress"),
+      u_blend: gl.getUniformLocation(program, "u_blend"),
+      u_bounds: gl.getUniformLocation(program, "u_bounds"),
+      u_feather: gl.getUniformLocation(program, "u_feather"),
+      u_invert: gl.getUniformLocation(program, "u_invert"),
+      u_kind: gl.getUniformLocation(program, "u_kind"),
     },
   };
 }

@@ -115,10 +115,79 @@ void main() {
 }
 `;
 
+export const BLEND_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_opacity;
+uniform int u_blend; // 0 normal, 1 multiply, 2 screen, 3 overlay, 4 add
+out vec4 outColor;
+vec3 blendMode(vec3 base, vec3 blend, int mode) {
+  if (mode == 1) return base * blend;
+  if (mode == 2) return 1.0 - (1.0 - base) * (1.0 - blend);
+  if (mode == 3) {
+    return mix(2.0 * base * blend, 1.0 - 2.0 * (1.0 - base) * (1.0 - blend), step(0.5, base));
+  }
+  if (mode == 4) return min(base + blend, 1.0);
+  return blend;
+}
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec3 rgb = blendMode(vec3(0.0), c.rgb, u_blend);
+  outColor = vec4(rgb, c.a * u_opacity);
+}
+`;
+
+export const MASK_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec4 u_bounds; // x,y,w,h normalized
+uniform float u_feather;
+uniform float u_invert;
+uniform int u_kind; // 0 rect, 1 ellipse
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float alpha = 0.0;
+  if (u_kind == 1) {
+    vec2 cxy = u_bounds.xy + u_bounds.zw * 0.5;
+    vec2 r = max(u_bounds.zw * 0.5, vec2(0.0001));
+    vec2 n = (v_uv - cxy) / r;
+    float d = 1.0 - length(n);
+    alpha = smoothstep(0.0, max(u_feather, 0.001), d);
+  } else {
+    vec2 p0 = u_bounds.xy;
+    vec2 p1 = u_bounds.xy + u_bounds.zw;
+    float l = smoothstep(p0.x - u_feather, p0.x + u_feather, v_uv.x);
+    float r = 1.0 - smoothstep(p1.x - u_feather, p1.x + u_feather, v_uv.x);
+    float t = smoothstep(p0.y - u_feather, p0.y + u_feather, v_uv.y);
+    float b = 1.0 - smoothstep(p1.y - u_feather, p1.y + u_feather, v_uv.y);
+    alpha = l * r * t * b;
+  }
+  if (u_invert > 0.5) alpha = 1.0 - alpha;
+  outColor = vec4(c.rgb, c.a * alpha);
+}
+`;
+
+export const WIPE_RIGHT_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D from;
+uniform sampler2D to;
+uniform float progress;
+out vec4 outColor;
+void main() {
+  float p = clamp(progress, 0.0, 1.0);
+  outColor = v_uv.x > 1.0 - p ? texture(to, v_uv) : texture(from, v_uv);
+}
+`;
+
 export const TRANSITION_SHADERS: Record<string, string> = {
   crossDissolve: CROSSFADE_FRAG,
   crossfade: CROSSFADE_FRAG,
   wipeLeft: WIPE_LEFT_FRAG,
+  wipeRight: WIPE_RIGHT_FRAG,
 };
 
 export const EFFECT_SHADERS: Record<string, string> = {

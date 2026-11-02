@@ -17,6 +17,7 @@ export function TitlesPanel() {
   const [captions, setCaptions] = useState<string>("");
   const [sttStatus, setSttStatus] = useState("");
   const project = useEditorStore((s) => s.project);
+  const setTitleOverlay = useEditorStore((s) => s.setTitleOverlay);
   const title = useMemo(() => {
     const doc = createTitle(text, "Hero Title");
     return { ...doc, animation: "typewriter" as const };
@@ -43,9 +44,20 @@ export function TitlesPanel() {
           <input
             className="w-full bg-transparent border border-line px-2 py-1"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setTitleOverlay(e.target.value || null);
+            }}
           />
         </label>
+        <div className="flex gap-2">
+          <button type="button" className="lum-btn-primary" onClick={() => setTitleOverlay(text)}>
+            Show on Program
+          </button>
+          <button type="button" className="lum-btn" onClick={() => setTitleOverlay(null)}>
+            Clear overlay
+          </button>
+        </div>
         <label className="grid grid-cols-[1fr_40px] gap-2 items-center text-xs">
           <input
             type="range"

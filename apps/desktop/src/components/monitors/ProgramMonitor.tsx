@@ -6,11 +6,11 @@ import {
   requireActiveSequence,
   timelineToSourceTime,
   clipEnd,
-  maskCoverage,
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
-import { isFileBacked } from "../../lib/media-api";
+import { isFileBacked, mediaStreamUrl } from "../../lib/media-api";
 import { getCachedFrame, prefetchFrames, quantizeTime } from "../../lib/frame-cache";
+import { ContinuousPreview } from "../../lib/webcodecs-preview";
 
 const PREVIEW_FPS = 12;
 
@@ -21,9 +21,11 @@ export function ProgramMonitor() {
   const project = useEditorStore((s) => s.project);
   const revision = useEditorStore((s) => s.revision);
   const previewMask = useEditorStore((s) => s.previewMask);
+  const titleOverlay = useEditorStore((s) => s.titleOverlay);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
+  const continuousRef = useRef<ContinuousPreview | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const lastKeyRef = useRef<string>("");
   const sequence = requireActiveSequence(project);
@@ -42,36 +44,92 @@ export function ProgramMonitor() {
     } catch {
       rendererRef.current = null;
     }
+    continuousRef.current = new ContinuousPreview();
     return () => {
+      continuousRef.current?.stop();
       rendererRef.current = null;
     };
   }, []);
 
+  // Continuous WebCodecs/HTMLVideo path while playing.
   useEffect(() => {
+    const preview = continuousRef.current;
+    const renderer = rendererRef.current;
+    if (!preview || !renderer) return;
+
+    if (!playing || !active || !isFileBacked(active.mediaPath)) {
+      preview.stop();
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      await preview.setSource(mediaStreamUrl(active.mediaPath), active.mediaPath);
+      if (cancelled) return;
+      await preview.seek(ticksToSeconds(active.sourceTime));
+      if (cancelled) return;
+      preview.start((source) => {
+        if (cancelled) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.parentElement?.getBoundingClientRect();
+        if (rect) {
+          canvas.width = Math.floor(rect.width);
+          canvas.height = Math.max(1, Math.floor(rect.height - 28));
+          renderer.resize(canvas.width, canvas.height);
+        }
+        const blend = (active.blendMode === "multiply" ||
+        active.blendMode === "screen" ||
+        active.blendMode === "overlay" ||
+        active.blendMode === "add"
+          ? active.blendMode
+          : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
+        renderer.drawImageSource(source, 1, blend);
+        if (previewMask) {
+          renderer.applyRectMask(
+            previewMask.bounds,
+            previewMask.feather,
+            previewMask.inverted,
+            previewMask.kind === "ellipse" ? "ellipse" : "rect",
+          );
+        }
+        if (source instanceof ImageBitmap) source.close();
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      preview.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, active?.mediaPath, active?.clipId, revision, previewMask]);
+
+  // Resync continuous decoder if it drifts from the timeline clock.
+  useEffect(() => {
+    if (!playing || !active) return;
+    const preview = continuousRef.current;
+    if (!preview) return;
+    const want = ticksToSeconds(active.sourceTime);
+    if (Math.abs(preview.currentTime() - want) > 0.35) {
+      void preview.seek(want);
+    }
+  }, [playing, active, playheadTicks]);
+
+  // Scrub / paused: ffmpeg frame cache.
+  useEffect(() => {
+    if (playing) return;
     let cancelled = false;
 
     const run = async () => {
       if (active && isFileBacked(active.mediaPath)) {
         if (frameKey === lastKeyRef.current && frameUrl) {
-          if (playing) {
-            prefetchFrames(active.mediaPath, quantized, 4, 960, 540, PREVIEW_FPS);
-          }
+          prefetchFrames(active.mediaPath, quantized, 2, 960, 540, PREVIEW_FPS);
           return;
         }
-        const url = await getCachedFrame(
-          active.mediaPath,
-          quantized,
-          960,
-          540,
-          PREVIEW_FPS,
-        );
-        if (cancelled) return;
-        if (!url) return;
+        const url = await getCachedFrame(active.mediaPath, quantized, 960, 540, PREVIEW_FPS);
+        if (cancelled || !url) return;
         lastKeyRef.current = frameKey;
         setFrameUrl(url);
-        if (playing) {
-          prefetchFrames(active.mediaPath, quantized, 4, 960, 540, PREVIEW_FPS);
-        }
         return;
       }
       lastKeyRef.current = "";
@@ -96,7 +154,7 @@ export function ProgramMonitor() {
   }, [frameKey, revision, playing, playheadTicks]);
 
   useEffect(() => {
-    if (!frameUrl || !imgRef.current || !canvasRef.current || !rendererRef.current) return;
+    if (playing || !frameUrl || !imgRef.current || !canvasRef.current || !rendererRef.current) return;
     const img = imgRef.current;
     const onLoad = () => {
       const canvas = canvasRef.current!;
@@ -107,29 +165,26 @@ export function ProgramMonitor() {
         canvas.height = Math.max(1, Math.floor(rect.height - 28));
         renderer.resize(canvas.width, canvas.height);
       }
-      const off = document.createElement("canvas");
-      off.width = img.naturalWidth || 960;
-      off.height = img.naturalHeight || 540;
-      const ctx = off.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, off.width, off.height);
+      const blend = (active?.blendMode === "multiply" ||
+      active?.blendMode === "screen" ||
+      active?.blendMode === "overlay" ||
+      active?.blendMode === "add"
+        ? active.blendMode
+        : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
+      renderer.drawImageSource(img, 1, blend);
       if (previewMask) {
-        const { width, height, data: px } = data;
-        for (let y = 0; y < height; y += 1) {
-          for (let x = 0; x < width; x += 1) {
-            const a = maskCoverage(previewMask, (x + 0.5) / width, (y + 0.5) / height, height);
-            const i = (y * width + x) * 4;
-            px[i + 3] = Math.round(px[i + 3]! * a);
-          }
-        }
+        renderer.applyRectMask(
+          previewMask.bounds,
+          previewMask.feather,
+          previewMask.inverted,
+          previewMask.kind === "ellipse" ? "ellipse" : "rect",
+        );
       }
-      renderer.drawPixels(new Uint8Array(data.data.buffer), off.width, off.height, 1);
     };
     img.addEventListener("load", onLoad);
     if (img.complete) onLoad();
     return () => img.removeEventListener("load", onLoad);
-  }, [frameUrl, previewMask]);
+  }, [frameUrl, previewMask, playing, active?.blendMode]);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -138,12 +193,26 @@ export function ProgramMonitor() {
         <span className="font-mono text-xs text-accent2">
           {formatTimecode(playheadTicks, Math.round(fps))}
           {active ? ` · ${active.name}` : " · black"}
-          {playing ? " · ▶" : ""}
+          {playing ? " · ▶ WebCodecs" : " · scrub"}
         </span>
       </header>
       <div className="flex-1 min-h-0 bg-black/40 relative">
         <canvas ref={canvasRef} className="w-full h-full block" />
-        {frameUrl ? <img ref={imgRef} src={frameUrl} alt="" className="hidden" /> : null}
+        {frameUrl && !playing ? <img ref={imgRef} src={frameUrl} alt="" className="hidden" /> : null}
+        {titleOverlay ? (
+          <div className="absolute inset-x-0 bottom-[18%] text-center pointer-events-none">
+            <div
+              className="inline-block px-4 py-2 text-2xl font-display tracking-wide"
+              style={{
+                color: "#f4f1e8",
+                textShadow: "0 2px 12px rgba(0,0,0,0.85)",
+                background: "linear-gradient(90deg, transparent, rgba(0,0,0,0.45), transparent)",
+              }}
+            >
+              {titleOverlay}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -152,7 +221,16 @@ export function ProgramMonitor() {
 function findActiveVideo(
   project: ReturnType<typeof useEditorStore.getState>["project"],
   time: bigint,
-): { mediaPath: string; sourceTime: bigint; name: string } | null {
+): {
+  mediaPath: string;
+  sourceTime: bigint;
+  name: string;
+  clipId: string;
+  blendMode: string;
+  clipStartSec: number;
+  clipInSec: number;
+  speed: number;
+} | null {
   const sequence = requireActiveSequence(project);
   for (const track of sequence.videoTracks) {
     if (track.hidden || track.muted) continue;
@@ -168,6 +246,11 @@ function findActiveVideo(
         mediaPath: media.proxy?.path ?? media.path,
         sourceTime,
         name: clip.name,
+        clipId: clip.id,
+        blendMode: clip.blendMode,
+        clipStartSec: ticksToSeconds(clip.start),
+        clipInSec: ticksToSeconds(clip.inPoint),
+        speed: Math.abs(clip.speed) || 1,
       };
     }
   }

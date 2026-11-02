@@ -4,6 +4,8 @@ import { useEditorStore } from "../../store/editor-store";
 
 export function EffectsPanel() {
   const locale = useEditorStore((s) => s.locale);
+  const applyTransitionPreset = useEditorStore((s) => s.applyTransitionPreset);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -25,15 +27,24 @@ export function EffectsPanel() {
           </div>
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wide text-muted mb-1">Transitions</div>
+          <div className="text-xs uppercase tracking-wide text-muted mb-1">
+            Transitions {selectedClipId ? "(click to apply on out)" : "(select a clip)"}
+          </div>
           <div className="space-y-1">
             {TRANSITION_PRESETS.map((tr) => (
-              <div key={tr.id} className="border border-line px-2 py-1.5 hover:border-accent">
+              <button
+                key={tr.id}
+                type="button"
+                className="w-full text-left border border-line px-2 py-1.5 hover:border-accent"
+                disabled={!selectedClipId}
+                onClick={() => applyTransitionPreset(tr.id)}
+              >
                 <div className="font-medium">{tr.label}</div>
                 <div className="text-[11px] text-muted">
                   {tr.category} · {tr.defaultSeconds}s
+                  {tr.glTransition ? ` · ${tr.glTransition}` : ""}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

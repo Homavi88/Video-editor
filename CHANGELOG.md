@@ -21,6 +21,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Soft mask feather/expansion applied in Program monitor; proxy path attached to media items.
 - Frame cache + prefetch for Program playback; ripple/roll/slip/slide gestures; Cross Dissolve → ffmpeg xfade.
 - Export queue actually runs jobs with progress; SlideEdit trims neighbors.
+- Continuous WebCodecs/HTMLVideo preview via `/api/stream`; Web Audio mixer with real VU/solo/fader.
+- GPU blend + mask shaders; clickable transition presets; Media Pool search/tags/auto-proxy 4K.
+- Nested sequence command; title overlay on Program; crash journal; electron-builder packaging scripts.
 
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.

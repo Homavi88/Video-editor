@@ -30,6 +30,12 @@ async function main() {
   if (denied.status !== 500 && denied.status !== 400) {
     throw new Error("path guard should reject /etc/passwd");
   }
+  const stream = await fetch(`${base}/api/stream?path=${encodeURIComponent(demo.video)}`, {
+    headers: { Range: "bytes=0-1023" },
+  });
+  if (stream.status !== 206 && stream.status !== 200) {
+    throw new Error(`stream failed: ${stream.status}`);
+  }
   console.log("e2e-smoke OK", {
     video: demo.video,
     pngBytes: buf.length,

@@ -68,11 +68,21 @@ export interface EditorState {
   interchangePreview: string | null;
   /** Soft mask applied in Program monitor preview (inspector-driven). */
   previewMask: import("@lumina/core").MaskShape | null;
+  trackGains: Record<string, number>;
+  vuLevels: Record<string, number>;
+  titleOverlay: string | null;
   // actions
   setLocale: (locale: Locale) => void;
   setPreviewMask: (mask: import("@lumina/core").MaskShape | null) => void;
+  setTrackGain: (trackId: string, gain: number) => void;
+  setVuLevels: (levels: Record<string, number>) => void;
+  setTitleOverlay: (text: string | null) => void;
+  toggleTrackSolo: (trackId: string) => void;
+  nestSelectedAsSequence: () => void;
   placeSelectedMediaAtPlayhead: () => void;
   attachProxyToMedia: (mediaId: string, proxyPath: string) => void;
+  applyTransitionPreset: (presetId: string) => void;
+  updateMediaTags: (mediaId: string, tags: readonly string[]) => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -142,9 +152,74 @@ export const useEditorStore = create<EditorState>((set, get) => {
     lastAutosaveAt: null,
     interchangePreview: null,
     previewMask: null,
+    trackGains: {},
+    vuLevels: {},
+    titleOverlay: null,
 
     setLocale: (locale) => set({ locale }),
     setPreviewMask: (mask) => set({ previewMask: mask }),
+    setTrackGain: (trackId, gain) =>
+      set({ trackGains: { ...get().trackGains, [trackId]: Math.min(2, Math.max(0, gain)) } }),
+    setVuLevels: (levels) => set({ vuLevels: levels }),
+    setTitleOverlay: (text) => set({ titleOverlay: text }),
+    toggleTrackSolo: (trackId) => {
+      const { history, project, revision } = get();
+      const sequence = requireActiveSequence(project);
+      const track = [...sequence.videoTracks, ...sequence.audioTracks].find((t) => t.id === trackId);
+      if (!track) return;
+      history.push(new SetTrackFlagsCommand(trackId, { solo: !track.solo }));
+      set(bump(sync(history), revision, track.solo ? "Solo off" : "Solo on"));
+    },
+    nestSelectedAsSequence: () => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) {
+        set({ status: "Select a clip to nest" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      const found = [...sequence.videoTracks, ...sequence.audioTracks]
+        .flatMap((tr) => tr.clips.map((c) => ({ clip: c, track: tr })))
+        .find((x) => x.clip.id === selectedClipId);
+      if (!found) return;
+      const nested = createProject({ name: `Nested ${found.clip.name}` }).sequences[0]!;
+      const withNested = { ...project, sequences: [...project.sequences, nested] };
+      history.reset(withNested);
+      const trackId = found.track.id;
+      history.push(new LiftClipCommand(trackId, selectedClipId));
+      const nestedClip = createClip({
+        kind: found.clip.kind,
+        source: { type: "sequence", sequenceId: nested.id },
+        start: found.clip.start,
+        duration: found.clip.duration,
+        name: `◆ ${found.clip.name}`,
+      });
+      history.push(new PlaceClipCommand(trackId, nestedClip, "overwrite"));
+      set({
+        ...bump(sync(history), revision, `Nested → ${nested.name}`),
+        selectedClipId: nestedClip.id,
+      });
+    },
+    applyTransitionPreset: (presetId) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) {
+        set({ status: "Select a clip to apply transition" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(new ApplyTransitionCommand(track.id, selectedClipId, presetId, "out"));
+        set(bump(sync(history), revision, `Transition ${presetId}`));
+        return;
+      }
+    },
+    updateMediaTags: (mediaId, tags) => {
+      const { project, revision } = get();
+      const media = project.media.map((m) => (m.id === mediaId ? { ...m, tags: [...tags] } : m));
+      const next = { ...project, media };
+      get().history.reset(next);
+      set({ project: next, revision: revision + 1 });
+    },
     placeSelectedMediaAtPlayhead: () => {
       const { selectedMediaId, project, playheadTicks } = get();
       if (!selectedMediaId) return;
