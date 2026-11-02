@@ -31,7 +31,11 @@ export function exportFcpxml(
 
   const idByMedia = new Map(media.map((m, i) => [m.id, `r${i + 1}`]));
   const spineClips: string[] = [];
-  const track = sequence.videoTracks[sequence.videoTracks.length - 1];
+  const bottomUp = [...sequence.videoTracks].reverse();
+  const track =
+    bottomUp.find((t) => !t.muted && !t.hidden && t.clips.length > 0) ??
+    bottomUp.find((t) => t.clips.length > 0) ??
+    sequence.videoTracks[sequence.videoTracks.length - 1];
   for (const clip of track?.clips ?? []) {
     if (clip.source.type !== "media") continue;
     const ref = idByMedia.get(clip.source.mediaId);

@@ -43,6 +43,8 @@ export function Timeline() {
   const linkSelectedAv = useEditorStore((s) => s.linkSelectedAv);
   const unlinkSelected = useEditorStore((s) => s.unlinkSelected);
   const replaceSelectedWithMedia = useEditorStore((s) => s.replaceSelectedWithMedia);
+  const reverseSelected = useEditorStore((s) => s.reverseSelected);
+  const addMarkerAtPlayhead = useEditorStore((s) => s.addMarkerAtPlayhead);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
@@ -128,6 +130,12 @@ export function Timeline() {
         <button type="button" className="lum-btn" onClick={() => replaceSelectedWithMedia()}>
           Replace
         </button>
+        <button type="button" className="lum-btn" onClick={() => reverseSelected()}>
+          ⌫
+        </button>
+        <button type="button" className="lum-btn" onClick={() => addMarkerAtPlayhead()}>
+          M
+        </button>
         <button
           type="button"
           className="lum-btn"
@@ -196,6 +204,28 @@ export function Timeline() {
                 {i}s
               </div>
             ))}
+            {sequence.markers.map((m) => (
+              <div
+                key={m.id}
+                className="absolute top-0 h-full w-0.5 bg-accent2"
+                style={{ left: ticksToSeconds(m.time) * pxPerSecond }}
+                title={m.name}
+              />
+            ))}
+            {sequence.inPoint !== null ? (
+              <div
+                className="absolute top-0 h-full w-0.5 bg-accent"
+                style={{ left: ticksToSeconds(sequence.inPoint) * pxPerSecond }}
+                title="In"
+              />
+            ) : null}
+            {sequence.outPoint !== null ? (
+              <div
+                className="absolute top-0 h-full w-0.5 bg-accent"
+                style={{ left: ticksToSeconds(sequence.outPoint) * pxPerSecond }}
+                title="Out"
+              />
+            ) : null}
           </div>
 
           {tracks.map((track) => (

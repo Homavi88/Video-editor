@@ -29,10 +29,20 @@ export function useTimelineAudio(): void {
     let raf = 0;
     const pump = () => {
       const store = useEditorStore.getState();
-      const { playing, playheadTicks, project, trackGains, setVuLevels, sampleClipGain } = store;
+      const {
+        playing,
+        playheadTicks,
+        project,
+        trackGains,
+        setVuLevels,
+        sampleClipGain,
+        duckingEnabled,
+      } = store;
       const sequence = requireActiveSequence(project);
       const anySolo = sequence.audioTracks.some((t) => t.solo);
       const levels: Record<string, number> = {};
+      // Peak speech level across non-music tracks for ducking (heuristic: track name).
+      let speechPeak = 0;
 
       if (ctx.state === "suspended" && playing) void ctx.resume();
 
@@ -46,7 +56,9 @@ export function useTimelineAudio(): void {
             const v = Math.abs((data[i]! - 128) / 128);
             if (v > peak) peak = v;
           }
-          levels[track.id] = track.muted || (anySolo && !track.solo) ? 0 : peak;
+          const shown = track.muted || (anySolo && !track.solo) ? 0 : peak;
+          levels[track.id] = shown;
+          if (!/music|bed|bgm/i.test(track.name)) speechPeak = Math.max(speechPeak, shown);
         } else {
           levels[track.id] = 0;
         }
@@ -60,8 +72,12 @@ export function useTimelineAudio(): void {
         if (gainNode) {
           const userGain = trackGains[track.id] ?? 1;
           const clipGain = clip ? sampleClipGain(clip.id, playheadTicks - clip.start) : 1;
+          let duck = 1;
+          if (duckingEnabled && /music|bed|bgm/i.test(track.name) && speechPeak > 0.12) {
+            duck = Math.max(0.2, 1 - (speechPeak - 0.12) * 1.5);
+          }
           const silent = track.muted || (anySolo && !track.solo) || !playing;
-          gainNode.gain.value = silent ? 0 : userGain * clipGain;
+          gainNode.gain.value = silent ? 0 : userGain * clipGain * duck;
         }
 
         if (!clip || clip.source.type !== "media") {

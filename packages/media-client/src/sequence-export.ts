@@ -65,21 +65,37 @@ function inferMode(sequence: Sequence): "concat" | "overlay" {
   );
   if (activeTracks.length > 1) return "overlay";
   const clips = activeTracks[0]?.clips.filter((c) => c.enabled) ?? [];
-  // Gaps / overlaps → overlay timeline placement
+  // Gaps / overlaps / leading offset → overlay timeline placement
   const sorted = [...clips].sort((a, b) => (a.start < b.start ? -1 : 1));
+  if (sorted[0] && sorted[0].start > 0n) return "overlay";
   for (let i = 1; i < sorted.length; i += 1) {
     if (sorted[i]!.start !== clipEnd(sorted[i - 1]!)) return "overlay";
   }
   return "concat";
 }
 
+/** Prefers bottom-most unmuted/visible track that actually has enabled clips. */
+function pickVideoTrack(sequence: Sequence): Track | undefined {
+  const candidates = [...sequence.videoTracks].reverse().filter((t) => !t.muted && !t.hidden);
+  return (
+    candidates.find((t) => t.clips.some((c) => c.enabled)) ??
+    candidates[0] ??
+    sequence.videoTracks[sequence.videoTracks.length - 1]
+  );
+}
+
+function pickAudioTrack(sequence: Sequence): Track | undefined {
+  return (
+    sequence.audioTracks.find((t) => !t.muted && t.clips.some((c) => c.enabled)) ??
+    sequence.audioTracks.find((t) => !t.muted) ??
+    sequence.audioTracks[0]
+  );
+}
+
 function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
   const { width, height, fps, mediaById } = dims(input);
-  const videoTrack =
-    [...input.sequence.videoTracks].reverse().find((t) => !t.muted && !t.hidden) ??
-    input.sequence.videoTracks[input.sequence.videoTracks.length - 1];
-  const audioTrack =
-    input.sequence.audioTracks.find((t) => !t.muted) ?? input.sequence.audioTracks[0];
+  const videoTrack = pickVideoTrack(input.sequence);
+  const audioTrack = pickAudioTrack(input.sequence);
 
   const vClips = fileClips(videoTrack, mediaById);
   const aClips = fileClips(audioTrack, mediaById);

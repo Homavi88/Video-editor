@@ -22,6 +22,11 @@ function applyOne(
   time: bigint,
 ): void {
   switch (fx.typeId) {
+    case "builtin.transform": {
+      const opacity = sampleEffectParam(fx.params.opacity!, time, 100) / 100;
+      if (opacity < 0.999) renderer.applyLgg(0, 0, opacity - 1, 1, 0);
+      break;
+    }
     case "builtin.blur.gaussian": {
       const radius = sampleEffectParam(fx.params.radius!, time, 10);
       renderer.applyBlur(Math.max(0.1, radius / 10));

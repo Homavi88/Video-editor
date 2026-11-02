@@ -10,12 +10,22 @@ export function MixerPanel() {
   const trackGains = useEditorStore((s) => s.trackGains);
   const setTrackGain = useEditorStore((s) => s.setTrackGain);
   const vuLevels = useEditorStore((s) => s.vuLevels);
+  const duckingEnabled = useEditorStore((s) => s.duckingEnabled);
+  const setDuckingEnabled = useEditorStore((s) => s.setDuckingEnabled);
   const sequence = requireActiveSequence(project);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
-      <header className="px-2 py-1.5 border-b border-line text-sm font-medium">
-        {t(locale, "panel.mixer")}
+      <header className="flex items-center justify-between px-2 py-1.5 border-b border-line text-sm font-medium">
+        <span>{t(locale, "panel.mixer")}</span>
+        <button
+          type="button"
+          className={`lum-btn text-[10px] ${duckingEnabled ? "border-accent text-accent" : ""}`}
+          onClick={() => setDuckingEnabled(!duckingEnabled)}
+          title="Duck tracks named Music/Bed/BGM under speech"
+        >
+          Duck
+        </button>
       </header>
       <div className="flex-1 overflow-auto lum-scroll p-3 flex gap-3">
         {sequence.audioTracks.map((track) => {

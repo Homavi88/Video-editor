@@ -56,16 +56,17 @@ export class RippleTrimCommand implements Command {
     let nextClip: Clip = clip;
 
     if (this.edge === "in") {
-      const newStart = this.newEdgeTime;
-      if (newStart >= clipEnd(clip)) throw new RangeError("invalid ripple in");
-      delta = newStart - clip.start;
-      const newDur = clip.duration - delta;
-      if (newDur <= 0n) throw new RangeError("clip would vanish");
+      // Premiere-style ripple-in: timeline start stays put; duration/inPoint change;
+      // subsequent clips shift by -trim so the gap at the head is closed (or opened when lengthening).
+      const trim = this.newEdgeTime - clip.start;
+      if (clip.duration - trim <= 0n) throw new RangeError("invalid ripple in");
+      delta = -trim;
+      const newDur = clip.duration - trim;
       nextClip = {
         ...clip,
-        start: newStart,
         duration: newDur,
-        inPoint: clip.inPoint + scaleSource(clip, delta),
+        inPoint: clip.inPoint + scaleSource(clip, trim),
+        // Source out stays put when trimming from the head.
       };
     } else {
       const newEnd = this.newEdgeTime;

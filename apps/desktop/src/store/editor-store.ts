@@ -177,6 +177,13 @@ export interface EditorState {
   setClipVolumePoint: (clipId: string, time: bigint, gain: number) => void;
   sampleClipGain: (clipId: string, time: bigint) => number;
   detectScenesOnSelected: () => Promise<void>;
+  loopPlayback: boolean;
+  setLoopPlayback: (v: boolean) => void;
+  reverseSelected: () => void;
+  duckingEnabled: boolean;
+  setDuckingEnabled: (v: boolean) => void;
+  exportWorkAreaOnly: boolean;
+  setExportWorkAreaOnly: (v: boolean) => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -217,6 +224,9 @@ export interface EditorState {
 function sync(history: HistoryStack): Project {
   return history.current;
 }
+
+/** Dedupes StrictMode / overlapping startup imports. */
+let demoMediaInflight: Promise<void> | null = null;
 
 function bump(project: Project, revision: number, status?: string) {
   return status !== undefined
@@ -264,8 +274,27 @@ export const useEditorStore = create<EditorState>((set, get) => {
     subtitleCues: [],
     previewScopeRgba: null,
     clipVolumePoints: {},
+    loopPlayback: false,
+    duckingEnabled: false,
+    exportWorkAreaOnly: false,
 
     setLocale: (locale) => set({ locale }),
+    setLoopPlayback: (v) => set({ loopPlayback: v }),
+    setDuckingEnabled: (v) => set({ duckingEnabled: v, status: v ? "Ducking on" : "Ducking off" }),
+    setExportWorkAreaOnly: (v) => set({ exportWorkAreaOnly: v }),
+    reverseSelected: () => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        const clip = track.clips.find((c) => c.id === selectedClipId);
+        if (!clip) continue;
+        const next = clip.speed === 0 ? -1 : -clip.speed;
+        history.push(new SetClipSpeedCommand(track.id, selectedClipId, next, true));
+        set(bump(sync(history), revision, `Speed ${next}x`));
+        return;
+      }
+    },
     setShowSafeZones: (v) => set({ showSafeZones: v }),
     setPreviewScopeRgba: (frame) => set({ previewScopeRgba: frame }),
     setClipVolumePoint: (clipId, time, gain) => {
@@ -829,82 +858,94 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     loadRealDemoMedia: async () => {
-      const demo = await ensureDemoMedia();
-      if (!demo) {
-        // Offline fallback placeholders
-        const items: MediaItem[] = [
-          createMediaItem({
-            kind: "video",
-            name: "Demo Bars.mp4",
-            path: "demo://color-bars",
-            metadata: {
-              duration: secondsToTicks(8),
-              width: 1280,
-              height: 720,
-              frameRate: FRAME_RATES.fps25,
-              hasVideo: true,
-              hasAudio: true,
-            },
-          }),
-        ];
-        get().importMediaItems(items);
-        set({ selectedMediaId: items[0]!.id, status: "Demo placeholders (API offline)" });
-        return;
-      }
+      if (get().project.media.length > 0) return;
+      if (demoMediaInflight) return demoMediaInflight;
+      demoMediaInflight = (async () => {
+        try {
+          if (get().project.media.length > 0) return;
+          const demo = await ensureDemoMedia();
+          if (get().project.media.length > 0) return;
+          if (!demo) {
+            // Offline fallback placeholders
+            const items: MediaItem[] = [
+              createMediaItem({
+                kind: "video",
+                name: "Demo Bars.mp4",
+                path: "demo://color-bars",
+                metadata: {
+                  duration: secondsToTicks(8),
+                  width: 1280,
+                  height: 720,
+                  frameRate: FRAME_RATES.fps25,
+                  hasVideo: true,
+                  hasAudio: true,
+                },
+              }),
+            ];
+            get().importMediaItems(items);
+            set({ selectedMediaId: items[0]!.id, status: "Demo placeholders (API offline)" });
+            return;
+          }
 
-      const entries: Array<{ path: string; name: string; fallbackKind: MediaKind }> = [
-        { path: demo.video, name: "Demo Bars.mp4", fallbackKind: "video" },
-        { path: demo.audio, name: "Demo Tone.wav", fallbackKind: "audio" },
-        { path: demo.image, name: "Still Gradient.png", fallbackKind: "image" },
-      ];
-      const items: MediaItem[] = [];
-      for (const entry of entries) {
-        const probed = await probePath(entry.path);
-        const durationStr = probed?.metadata.duration;
-        const duration =
-          typeof durationStr === "string" || typeof durationStr === "number"
-            ? BigInt(durationStr)
-            : secondsToTicks(entry.fallbackKind === "image" ? 5 : 8);
-        items.push(
-          createMediaItem({
-            kind: (probed?.kind as MediaKind) ?? entry.fallbackKind,
-            name: entry.name,
-            path: entry.path,
-            metadata: {
-              duration,
-              hasVideo: entry.fallbackKind !== "audio",
-              hasAudio: entry.fallbackKind !== "image",
-              ...(entry.fallbackKind !== "audio"
-                ? {
-                    width: Number(probed?.metadata.width) || 1280,
-                    height: Number(probed?.metadata.height) || 720,
-                    frameRate: FRAME_RATES.fps25,
-                  }
-                : { audioChannels: 2, audioSampleRate: 48000 }),
-            },
-          }),
-        );
-      }
-      get().importMediaItems(items);
-      const loaded = get().project.media;
-      const video = loaded.find((m) => m.kind === "video");
-      const audio = loaded.find((m) => m.kind === "audio");
-      const sequence = requireActiveSequence(get().project);
-      const hasClips = [...sequence.videoTracks, ...sequence.audioTracks].some(
-        (tr) => tr.clips.length > 0,
-      );
-      if (!hasClips && video) {
-        const vTrack = sequence.videoTracks[sequence.videoTracks.length - 1]!;
-        get().dropMediaOnTimeline(video.id, vTrack.id, 0n);
-      }
-      if (!hasClips && audio) {
-        const aTrack = requireActiveSequence(get().project).audioTracks[0]!;
-        get().dropMediaOnTimeline(audio.id, aTrack.id, 0n);
-      }
-      set({
-        selectedMediaId: items[0]!.id,
-        status: "Loaded real demo media (ffmpeg) · placed on V1/A1",
-      });
+          const entries: Array<{ path: string; name: string; fallbackKind: MediaKind }> = [
+            { path: demo.video, name: "Demo Bars.mp4", fallbackKind: "video" },
+            { path: demo.audio, name: "Demo Tone.wav", fallbackKind: "audio" },
+            { path: demo.image, name: "Still Gradient.png", fallbackKind: "image" },
+          ];
+          const items: MediaItem[] = [];
+          for (const entry of entries) {
+            const probed = await probePath(entry.path);
+            const durationStr = probed?.metadata.duration;
+            const duration =
+              typeof durationStr === "string" || typeof durationStr === "number"
+                ? BigInt(durationStr)
+                : secondsToTicks(entry.fallbackKind === "image" ? 5 : 8);
+            items.push(
+              createMediaItem({
+                kind: (probed?.kind as MediaKind) ?? entry.fallbackKind,
+                name: entry.name,
+                path: entry.path,
+                metadata: {
+                  duration,
+                  hasVideo: entry.fallbackKind !== "audio",
+                  hasAudio: entry.fallbackKind !== "image",
+                  ...(entry.fallbackKind !== "audio"
+                    ? {
+                        width: Number(probed?.metadata.width) || 1280,
+                        height: Number(probed?.metadata.height) || 720,
+                        frameRate: FRAME_RATES.fps25,
+                      }
+                    : { audioChannels: 2, audioSampleRate: 48000 }),
+                },
+              }),
+            );
+          }
+          if (get().project.media.length > 0) return;
+          get().importMediaItems(items);
+          const loaded = get().project.media;
+          const video = loaded.find((m) => m.kind === "video");
+          const audio = loaded.find((m) => m.kind === "audio");
+          const sequence = requireActiveSequence(get().project);
+          const hasClips = [...sequence.videoTracks, ...sequence.audioTracks].some(
+            (tr) => tr.clips.length > 0,
+          );
+          if (!hasClips && video) {
+            const vTrack = sequence.videoTracks[sequence.videoTracks.length - 1]!;
+            get().dropMediaOnTimeline(video.id, vTrack.id, 0n);
+          }
+          if (!hasClips && audio) {
+            const aTrack = requireActiveSequence(get().project).audioTracks[0]!;
+            get().dropMediaOnTimeline(audio.id, aTrack.id, 0n);
+          }
+          set({
+            selectedMediaId: items[0]!.id,
+            status: "Loaded real demo media (ffmpeg) · placed on V1/A1",
+          });
+        } finally {
+          demoMediaInflight = null;
+        }
+      })();
+      return demoMediaInflight;
     },
 
     dropMediaOnTimeline: (mediaId, trackId, startTicks) => {
@@ -1067,17 +1108,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
       try {
         const { project } = get();
         const sequence = requireActiveSequence(project);
-        const activeVideoTracks = sequence.videoTracks.filter(
-          (t) => !t.muted && !t.hidden && t.clips.some((c) => c.enabled),
-        ).length;
-        const mode = activeVideoTracks > 1 ? "overlay" : "concat";
         mark(next.id, { progress: 0.35 });
         const result = await exportSequenceApi({
-          sequence,
+          sequence: applyWorkArea(sequence, get().exportWorkAreaOnly),
           media: project.media,
           outputPath: next.outputPath,
           dryRun: false,
-          mode,
+          // Let media-client infer concat vs overlay (gaps / multi-track).
           preferredFadeSeconds: get().transitionDurationSec,
         });
         if (!result.ok) {
@@ -1203,17 +1240,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
     runSequenceExport: async (outputPath, dryRun = false) => {
       const { project } = get();
       const sequence = requireActiveSequence(project);
-      const activeVideoTracks = sequence.videoTracks.filter(
-        (t) => !t.muted && !t.hidden && t.clips.some((c) => c.enabled),
-      ).length;
-      const mode = activeVideoTracks > 1 ? "overlay" : "concat";
       set({ status: dryRun ? "Building export graph…" : "Exporting sequence…" });
       const result = await exportSequenceApi({
-        sequence,
+        sequence: applyWorkArea(sequence, get().exportWorkAreaOnly),
         media: project.media,
         outputPath,
         dryRun,
-        mode,
         preferredFadeSeconds: get().transitionDurationSec,
       });
       if (!result.ok) {
@@ -1222,7 +1254,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
       set({
         status: dryRun
-          ? `Export dry-run (${result.encoder ?? mode}): ${result.description ?? "ok"}`
+          ? `Export dry-run (${result.encoder ?? "auto"}): ${result.description ?? "ok"}`
           : `Exported [${result.encoder ?? "libx264"}] → ${outputPath}`,
       });
     },
@@ -1253,8 +1285,23 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     tickPlayback: (dtSeconds) => {
       if (!get().playing) return;
-      const next = get().playheadTicks + secondsToTicks(dtSeconds);
-      set({ playheadTicks: next });
+      let next = get().playheadTicks + secondsToTicks(dtSeconds);
+      const { loopPlayback, project, exportWorkAreaOnly } = get();
+      const sequence = requireActiveSequence(project);
+      const ends = [...sequence.videoTracks, ...sequence.audioTracks].flatMap((tr) =>
+        tr.clips.map((c) => clipEnd(c)),
+      );
+      let loopEnd =
+        ends.length > 0 ? ends.reduce((a, b) => (a > b ? a : b)) : secondsToTicks(10);
+      let loopStart = 0n;
+      if (exportWorkAreaOnly || loopPlayback) {
+        if (sequence.inPoint !== null) loopStart = sequence.inPoint;
+        if (sequence.outPoint !== null) loopEnd = sequence.outPoint;
+      }
+      if (loopPlayback && next >= loopEnd) {
+        next = loopStart;
+      }
+      set({ playheadTicks: next < 0n ? 0n : next });
       get().maybeAutosave();
     },
   };
@@ -1270,6 +1317,46 @@ export function formatTimecode(ticks: bigint, fps = 25): string {
   const h = Math.floor(totalMin / 60);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(h)}:${pad(m)}:${pad(s)}:${pad(f)}`;
+}
+
+/** Shifts/clips timeline content into [in,out) when work-area export is enabled. */
+function applyWorkArea(
+  sequence: import("@lumina/core").Sequence,
+  enabled: boolean,
+): import("@lumina/core").Sequence {
+  if (!enabled || sequence.inPoint === null || sequence.outPoint === null) return sequence;
+  const inP = sequence.inPoint;
+  const outP = sequence.outPoint;
+  if (outP <= inP) return sequence;
+  const mapTrack = (track: import("@lumina/core").Track): import("@lumina/core").Track => ({
+    ...track,
+    clips: track.clips
+      .map((c) => {
+        const end = clipEnd(c);
+        if (end <= inP || c.start >= outP) return null;
+        const newStart = c.start < inP ? 0n : c.start - inP;
+        const trimIn = c.start < inP ? inP - c.start : 0n;
+        const visibleEnd = end < outP ? end : outP;
+        const newDur = visibleEnd - (c.start < inP ? inP : c.start);
+        if (newDur <= 0n) return null;
+        return {
+          ...c,
+          start: newStart,
+          duration: newDur,
+          inPoint: c.inPoint + trimIn,
+          outPoint: c.inPoint + trimIn + newDur,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null),
+  });
+  return {
+    ...sequence,
+    videoTracks: sequence.videoTracks.map(mapTrack),
+    audioTracks: sequence.audioTracks.map(mapTrack),
+    subtitleTracks: sequence.subtitleTracks.map(mapTrack),
+    inPoint: null,
+    outPoint: null,
+  };
 }
 
 async function averageLumaFromUrl(url: string): Promise<number> {

@@ -349,9 +349,31 @@ export function ProgramMonitor() {
             </div>
           </div>
         ) : null}
+        {transitionHint(sequence, playheadTicks) ? (
+          <div className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 bg-black/60 text-accent2 pointer-events-none">
+            {transitionHint(sequence, playheadTicks)}
+          </div>
+        ) : null}
       </div>
     </section>
   );
+}
+
+function transitionHint(
+  sequence: ReturnType<typeof requireActiveSequence>,
+  time: bigint,
+): string | null {
+  const win = BigInt(Math.round(0.5 * 10_000_000));
+  for (const track of sequence.videoTracks) {
+    for (const clip of track.clips) {
+      const end = clipEnd(clip);
+      if (!clip.transitionOutId) continue;
+      if (time >= end - win && time <= end + win) {
+        return `Transition ${clip.transitionOutId}`;
+      }
+    }
+  }
+  return null;
 }
 
 function findActiveVideo(

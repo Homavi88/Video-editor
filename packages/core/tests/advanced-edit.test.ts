@@ -47,18 +47,36 @@ describe("advanced editing + interchange", () => {
       start: 0n,
       duration: secondsToTicks(4),
     });
+    const neighbor = createClip({
+      kind: "video",
+      source: { type: "media", mediaId: media.id },
+      start: secondsToTicks(4),
+      duration: secondsToTicks(4),
+      name: "N",
+    });
     history.push(new PlaceClipCommand(trackId, clip, "overwrite"));
+    history.push(new PlaceClipCommand(trackId, neighbor, "overwrite"));
     history.push(
       new RippleTrimCommand(trackId, clip.id, "out", secondsToTicks(3)),
     );
     let track = requireActiveSequence(history.current).videoTracks.find((t) => t.id === trackId)!;
     expect(track.clips[0]!.duration).toBe(secondsToTicks(3));
+    expect(track.clips.find((c) => c.id === neighbor.id)!.start).toBe(secondsToTicks(3));
+    // Ripple-in: keep start, shorten duration, pull neighbor left (not open a gap after).
+    history.push(
+      new RippleTrimCommand(trackId, clip.id, "in", secondsToTicks(1)),
+    );
+    track = requireActiveSequence(history.current).videoTracks.find((t) => t.id === trackId)!;
+    const head = track.clips.find((c) => c.id === clip.id)!;
+    expect(head.start).toBe(0n);
+    expect(head.duration).toBe(secondsToTicks(2));
+    expect(track.clips.find((c) => c.id === neighbor.id)!.start).toBe(secondsToTicks(2));
     history.push(new SlipEditCommand(trackId, clip.id, secondsToTicks(0.5)));
     track = requireActiveSequence(history.current).videoTracks.find((t) => t.id === trackId)!;
-    expect(track.clips[0]!.inPoint).toBe(secondsToTicks(0.5));
+    expect(track.clips.find((c) => c.id === clip.id)!.inPoint).toBe(secondsToTicks(1.5));
     history.push(new SetClipSpeedCommand(trackId, clip.id, 2, true));
     track = requireActiveSequence(history.current).videoTracks.find((t) => t.id === trackId)!;
-    expect(track.clips[0]!.speed).toBe(2);
+    expect(track.clips.find((c) => c.id === clip.id)!.speed).toBe(2);
     history.push(new AddMarkerCommand(secondsToTicks(1), "Hit"));
     expect(requireActiveSequence(history.current).markers).toHaveLength(1);
   });

@@ -20,11 +20,21 @@ function tc(seconds: number, fps: number): string {
   return `${p(h)}:${p(m)}:${p(s)}:${p(f)}`;
 }
 
-/** Exports a simple EDL from the bottom video track. */
+/** Bottom-most unmuted video track that has clips (falls back to last track). */
+function pickExportVideoTrack(sequence: Sequence) {
+  const bottomUp = [...sequence.videoTracks].reverse();
+  return (
+    bottomUp.find((t) => !t.muted && !t.hidden && t.clips.length > 0) ??
+    bottomUp.find((t) => t.clips.length > 0) ??
+    sequence.videoTracks[sequence.videoTracks.length - 1]
+  );
+}
+
+/** Exports a simple EDL from the bottom video track that has clips. */
 export function exportEdl(sequence: Sequence, media: readonly MediaItem[]): string {
   const fps = sequence.frameRate.numerator / sequence.frameRate.denominator;
   const mediaById = new Map(media.map((m) => [m.id, m]));
-  const track = sequence.videoTracks[sequence.videoTracks.length - 1];
+  const track = pickExportVideoTrack(sequence);
   const lines = [`TITLE: ${sequence.name}`, `FCM: NON-DROP FRAME`, ``];
   let event = 1;
   for (const clip of [...(track?.clips ?? [])].sort((a, b) => (a.start < b.start ? -1 : 1))) {

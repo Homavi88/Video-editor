@@ -12,6 +12,9 @@ export function ExportPanel() {
   const exportInterchange = useEditorStore((s) => s.exportInterchange);
   const interchangePreview = useEditorStore((s) => s.interchangePreview);
   const status = useEditorStore((s) => s.status);
+  const exportWorkAreaOnly = useEditorStore((s) => s.exportWorkAreaOnly);
+  const setExportWorkAreaOnly = useEditorStore((s) => s.setExportWorkAreaOnly);
+  const project = useEditorStore((s) => s.project);
   const [presetId, setPresetId] = useState("webm-av1");
   const [patentOk, setPatentOk] = useState(false);
   const [encoders, setEncoders] = useState<
@@ -86,6 +89,17 @@ export function ExportPanel() {
                     .map((e) => e.label)
                     .join(" · ")}
             </div>
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={exportWorkAreaOnly}
+                onChange={(e) => setExportWorkAreaOnly(e.target.checked)}
+              />
+              Export work area only (Seq In/Out)
+              {project.sequences[0]?.inPoint != null && project.sequences[0]?.outPoint != null
+                ? " · set"
+                : " · set In/Out on timeline"}
+            </label>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
