@@ -12,10 +12,15 @@ describe("path guard + encoders", () => {
     expect(() => assertAllowedPath("/etc/passwd", roots)).toThrow(/outside allowed roots/);
   });
 
-  it("detects at least software encoder", async () => {
+  it("detects at least software encoder and prefers only available HW", async () => {
     const encoders = await detectEncoders();
     expect(encoders.some((e) => e.id === "software" && e.available)).toBe(true);
     const picked = pickEncoder(encoders);
+    expect(picked.available).toBe(true);
     expect(picked.videoCodecFlag.length).toBeGreaterThan(0);
+    // Smoke probe must not mark HW available without a working encode.
+    for (const e of encoders.filter((x) => x.id !== "software" && x.available)) {
+      expect(["nvenc", "qsv", "amf", "videotoolbox"]).toContain(e.id);
+    }
   });
 });
