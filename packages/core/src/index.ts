@@ -14,6 +14,7 @@ export * from "./render-graph/index.js";
 export * from "./transitions/catalog.js";
 export * from "./effects/catalog.js";
 export * from "./color/lut.js";
+export * from "./color/demo-lut.js";
 export * from "./color/wheels.js";
 export * from "./color/scopes.js";
 export * from "./text/subtitles.js";

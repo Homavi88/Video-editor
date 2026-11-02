@@ -8,9 +8,12 @@ import {
   BLIT_FRAG,
   COLOR_LGG_FRAG,
   CROSSFADE_FRAG,
+  FILM_GRAIN_FRAG,
   FULLSCREEN_VERT,
   GAUSSIAN_BLUR_FRAG,
+  LUT3D_FRAG,
   MASK_FRAG,
+  SHARPEN_FRAG,
   VIGNETTE_FRAG,
   WIPE_LEFT_FRAG,
   WIPE_RIGHT_FRAG,
@@ -32,8 +35,13 @@ export class WebGLPreviewRenderer {
   private readonly wipeRight: Program;
   private readonly blend: Program;
   private readonly mask: Program;
+  private readonly grain: Program;
+  private readonly sharpen: Program;
+  private readonly lut: Program;
   private readonly quad: WebGLBuffer;
   private readonly texture: WebGLTexture;
+  private lutTexture: WebGLTexture | null = null;
+  private lutSize = 0;
   private width: number;
   private height: number;
   readonly stats: RendererStats = { frames: 0, lastMs: 0 };
@@ -53,6 +61,9 @@ export class WebGLPreviewRenderer {
     this.wipeRight = createProgram(gl, FULLSCREEN_VERT, WIPE_RIGHT_FRAG);
     this.blend = createProgram(gl, FULLSCREEN_VERT, BLEND_FRAG);
     this.mask = createProgram(gl, FULLSCREEN_VERT, MASK_FRAG);
+    this.grain = createProgram(gl, FULLSCREEN_VERT, FILM_GRAIN_FRAG);
+    this.sharpen = createProgram(gl, FULLSCREEN_VERT, SHARPEN_FRAG);
+    this.lut = createProgram(gl, FULLSCREEN_VERT, LUT3D_FRAG);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -133,6 +144,63 @@ export class WebGLPreviewRenderer {
     this.drawTexture(this.texture, program, (p) => {
       gl.uniform1f(p.uniforms.progress!, progress);
       if (p.uniforms.to) gl.uniform1i(p.uniforms.to, 0);
+    });
+  }
+
+  applyFilmGrain(amount: number, timeSeconds = 0): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.grain, (p) => {
+      gl.uniform1f(p.uniforms.u_amount!, Math.max(0, amount));
+      gl.uniform1f(p.uniforms.u_time!, timeSeconds);
+    });
+  }
+
+  applySharpen(amount: number): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.sharpen, (p) => {
+      gl.uniform1f(p.uniforms.u_amount!, Math.max(0, amount));
+      gl.uniform2f(p.uniforms.u_texel!, 1 / this.width, 1 / this.height);
+    });
+  }
+
+  /** Uploads a 3D LUT (RGB float triplets, size³). */
+  setLut3D(size: number, rgbFloats: Float32Array): void {
+    const gl = this.gl;
+    if (!this.lutTexture) this.lutTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    gl.texImage3D(
+      gl.TEXTURE_3D,
+      0,
+      gl.RGB16F,
+      size,
+      size,
+      size,
+      0,
+      gl.RGB,
+      gl.FLOAT,
+      rgbFloats,
+    );
+    this.lutSize = size;
+  }
+
+  clearLut(): void {
+    this.lutSize = 0;
+  }
+
+  applyLut(strength = 1): void {
+    if (!this.lutTexture || this.lutSize < 2) return;
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.lut, (p) => {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
+      gl.uniform1i(p.uniforms.u_lut!, 1);
+      gl.uniform1f(p.uniforms.u_strength!, strength);
+      gl.activeTexture(gl.TEXTURE0);
     });
   }
 
@@ -269,6 +337,9 @@ function createProgram(gl: WebGL2RenderingContext, vertSrc: string, fragSrc: str
       u_feather: gl.getUniformLocation(program, "u_feather"),
       u_invert: gl.getUniformLocation(program, "u_invert"),
       u_kind: gl.getUniformLocation(program, "u_kind"),
+      u_time: gl.getUniformLocation(program, "u_time"),
+      u_lut: gl.getUniformLocation(program, "u_lut"),
+      u_strength: gl.getUniformLocation(program, "u_strength"),
     },
   };
 }

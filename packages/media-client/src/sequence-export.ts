@@ -25,6 +25,8 @@ export interface SequenceExportInput {
   /** Prefer HW encoder when videoCodec is h264/libx264. */
   readonly preferHw?: readonly HwEncoderId[];
   readonly mode?: "concat" | "overlay";
+  /** Preferred crossfade length in seconds (clamped to half of adjacent clips). */
+  readonly preferredFadeSeconds?: number;
 }
 
 export interface BuiltExportCommand {
@@ -136,7 +138,10 @@ function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
       const prev = vClips[i - 1]!.clip;
       const nextLabel = vLabels[i]!;
       const nextDur = ticksToSeconds(vClips[i]!.clip.duration);
-      const fade = prev.transitionOutId ? Math.min(1, currentDur / 2, nextDur / 2) : 0;
+      const preferred = input.preferredFadeSeconds ?? 1;
+      const fade = prev.transitionOutId
+        ? Math.min(preferred, currentDur / 2, nextDur / 2)
+        : 0;
       const out = i === vLabels.length - 1 ? "vout" : `xf${i}`;
       if (fade > 0.01) {
         const offset = Math.max(0, currentDur - fade);

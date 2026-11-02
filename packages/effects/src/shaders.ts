@@ -183,6 +183,57 @@ void main() {
 }
 `;
 
+export const FILM_GRAIN_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_amount;
+uniform float u_time;
+out vec4 outColor;
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float n = hash(v_uv * vec2(1920.0, 1080.0) + u_time) - 0.5;
+  outColor = vec4(clamp(c.rgb + n * u_amount, 0.0, 1.0), c.a);
+}
+`;
+
+export const SHARPEN_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_texel;
+uniform float u_amount;
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec4 blur =
+    texture(u_tex, v_uv + vec2(-u_texel.x, 0.0)) +
+    texture(u_tex, v_uv + vec2(u_texel.x, 0.0)) +
+    texture(u_tex, v_uv + vec2(0.0, -u_texel.y)) +
+    texture(u_tex, v_uv + vec2(0.0, u_texel.y));
+  blur *= 0.25;
+  outColor = vec4(clamp(c.rgb + (c.rgb - blur.rgb) * u_amount, 0.0, 1.0), c.a);
+}
+`;
+
+export const LUT3D_FRAG = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform sampler3D u_lut;
+uniform float u_strength;
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec3 mapped = texture(u_lut, clamp(c.rgb, 0.0, 1.0)).rgb;
+  outColor = vec4(mix(c.rgb, mapped, clamp(u_strength, 0.0, 1.0)), c.a);
+}
+`;
+
 export const TRANSITION_SHADERS: Record<string, string> = {
   crossDissolve: CROSSFADE_FRAG,
   crossfade: CROSSFADE_FRAG,

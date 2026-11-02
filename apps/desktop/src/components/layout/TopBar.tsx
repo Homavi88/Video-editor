@@ -17,6 +17,8 @@ export function TopBar() {
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const revision = useEditorStore((s) => s.revision);
   const history = useEditorStore((s) => s.history);
+  const floatingInspector = useEditorStore((s) => s.floatingInspector);
+  const setFloatingInspector = useEditorStore((s) => s.setFloatingInspector);
   const canUndo = history.canUndo;
   const canRedo = history.canRedo;
   void revision;
@@ -51,6 +53,14 @@ export function TopBar() {
         </button>
         <button type="button" className="lum-btn-primary" onClick={() => setPlaying(!playing)}>
           {playing ? "Pause" : t(locale, "action.play")}
+        </button>
+        <button
+          type="button"
+          className={`lum-btn ${floatingInspector ? "border-accent text-accent" : ""}`}
+          onClick={() => setFloatingInspector(!floatingInspector)}
+          title="Float Inspector"
+        >
+          Float
         </button>
         <button
           type="button"

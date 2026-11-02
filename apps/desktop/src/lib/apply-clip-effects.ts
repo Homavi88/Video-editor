@@ -42,7 +42,33 @@ function applyOne(
       renderer.applyLgg(lift, gamma, gain, sat, exp);
       break;
     }
+    case "builtin.filmGrain": {
+      const amount = sampleEffectParam(fx.params.amount!, time, 25) / 100;
+      renderer.applyFilmGrain(amount, Number(time) / 10_000_000);
+      break;
+    }
+    case "builtin.sharpen": {
+      const amount = sampleEffectParam(fx.params.amount!, time, 50) / 50;
+      renderer.applySharpen(amount);
+      break;
+    }
+    case "builtin.color.lut": {
+      // Intensity is applied by ProgramMonitor via activeLut; keep stack order marker.
+      break;
+    }
     default:
       break;
+  }
+}
+
+/** Applies effects from every enabled adjustment-layer clip covering `time`. */
+export function applyAdjustmentEffects(
+  renderer: WebGLPreviewRenderer,
+  clips: readonly Clip[],
+  time: bigint,
+): void {
+  for (const clip of clips) {
+    if (!clip.enabled) continue;
+    applyClipEffectsToRenderer(renderer, clip, time);
   }
 }

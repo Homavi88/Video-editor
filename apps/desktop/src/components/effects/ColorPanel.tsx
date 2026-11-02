@@ -15,6 +15,13 @@ export function ColorPanel() {
   const [sat, setSat] = useState(1);
   const [exposure, setExposure] = useState(0);
   const status = useEditorStore((s) => s.status);
+  const activeLut = useEditorStore((s) => s.activeLut);
+  const lutStrength = useEditorStore((s) => s.lutStrength);
+  const loadDemoLut = useEditorStore((s) => s.loadDemoLut);
+  const setLutStrength = useEditorStore((s) => s.setLutStrength);
+  const setActiveLut = useEditorStore((s) => s.setActiveLut);
+  const addEffectToSelected = useEditorStore((s) => s.addEffectToSelected);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
 
   const preview = useMemo(() => {
     const lgg = {
@@ -54,6 +61,46 @@ export function ColorPanel() {
         <Slider label="Gain" value={gain} min={-1} max={1} step={0.01} onChange={setGain} />
         <Slider label="Saturation" value={sat} min={0} max={3} step={0.01} onChange={setSat} />
         <Slider label="Exposure" value={exposure} min={-3} max={3} step={0.01} onChange={setExposure} />
+
+        <div className="text-xs uppercase tracking-wide text-muted pt-1">LUT</div>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" className="lum-btn-primary" onClick={() => loadDemoLut()}>
+            Load warm demo LUT
+          </button>
+          <button
+            type="button"
+            className="lum-btn"
+            disabled={!activeLut}
+            onClick={() => setActiveLut(null)}
+          >
+            Clear LUT
+          </button>
+          <button
+            type="button"
+            className="lum-btn"
+            disabled={!selectedClipId}
+            onClick={() => {
+              loadDemoLut();
+              addEffectToSelected("builtin.color.lut");
+            }}
+          >
+            Add LUT FX to clip
+          </button>
+        </div>
+        <div className="text-[11px] text-muted">
+          {activeLut
+            ? `${activeLut.title} · ${activeLut.size}³ · strength ${(lutStrength * 100).toFixed(0)}%`
+            : "No LUT — Program preview uses identity"}
+        </div>
+        <Slider
+          label="LUT strength"
+          value={lutStrength}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={setLutStrength}
+        />
+
         <div className="text-xs text-muted">
           Histogram peak bin:{" "}
           {hist.histogram.indexOf(Math.max(...hist.histogram))} · Status: {status}

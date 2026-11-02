@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lumina/i18n";
 import { WebGLPreviewRenderer } from "@lumina/effects";
+import { ticksToSeconds } from "@lumina/core";
 import { useEditorStore } from "../../store/editor-store";
 import { fetchFrameObjectUrl, isFileBacked } from "../../lib/media-api";
 
@@ -8,10 +9,18 @@ export function SourceMonitor() {
   const locale = useEditorStore((s) => s.locale);
   const project = useEditorStore((s) => s.project);
   const selectedMediaId = useEditorStore((s) => s.selectedMediaId);
+  const sourceInSec = useEditorStore((s) => s.sourceInSec);
+  const sourceOutSec = useEditorStore((s) => s.sourceOutSec);
+  const setSourceInOut = useEditorStore((s) => s.setSourceInOut);
+  const threePointInsert = useEditorStore((s) => s.threePointInsert);
+  const placeSelectedMediaAtPlayhead = useEditorStore((s) => s.placeSelectedMediaAtPlayhead);
   const media = project.media.find((m) => m.id === selectedMediaId) ?? project.media[0];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [scrubSec, setScrubSec] = useState(0);
+
+  const mediaDur = media ? Math.max(0.1, ticksToSeconds(media.metadata.duration)) : 10;
 
   useEffect(() => {
     let revoked: string | null = null;
@@ -29,12 +38,12 @@ export function SourceMonitor() {
       const parent = canvas.parentElement?.getBoundingClientRect();
       if (parent) {
         canvas.width = Math.floor(parent.width);
-        canvas.height = Math.max(1, Math.floor(parent.height));
+        canvas.height = Math.max(1, Math.floor(parent.height - 36));
         renderer.resize(canvas.width, canvas.height);
       }
 
       if (media && isFileBacked(media.path) && media.kind !== "audio") {
-        const url = await fetchFrameObjectUrl(media.path, 1, 640, 360);
+        const url = await fetchFrameObjectUrl(media.path, scrubSec || 1, 640, 360);
         if (cancelled) {
           if (url) URL.revokeObjectURL(url);
           return;
@@ -55,7 +64,7 @@ export function SourceMonitor() {
       cancelled = true;
       if (revoked) URL.revokeObjectURL(revoked);
     };
-  }, [media?.id, media?.kind, media?.path]);
+  }, [media?.id, media?.kind, media?.path, scrubSec]);
 
   useEffect(() => {
     if (!frameUrl || !imgRef.current || !canvasRef.current) return;
@@ -67,7 +76,7 @@ export function SourceMonitor() {
         const parent = canvas.parentElement?.getBoundingClientRect();
         if (parent) {
           canvas.width = Math.floor(parent.width);
-          canvas.height = Math.max(1, Math.floor(parent.height));
+          canvas.height = Math.max(1, Math.floor(parent.height - 36));
           renderer.resize(canvas.width, canvas.height);
         }
         const off = document.createElement("canvas");
@@ -96,6 +105,45 @@ export function SourceMonitor() {
       <div className="flex-1 min-h-0 bg-black/40">
         <canvas ref={canvasRef} className="w-full h-full block" />
         {frameUrl ? <img ref={imgRef} src={frameUrl} alt="" className="hidden" /> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 px-2 py-1 border-t border-line text-xs">
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSourceInOut("in", scrubSec)}
+          title="Mark In"
+        >
+          I
+        </button>
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSourceInOut("out", scrubSec)}
+          title="Mark Out"
+        >
+          O
+        </button>
+        <span className="font-mono text-muted">
+          {sourceInSec.toFixed(2)}–{sourceOutSec.toFixed(2)}s
+        </span>
+        <button type="button" className="lum-btn-primary" onClick={() => threePointInsert()}>
+          Insert
+        </button>
+        <button type="button" className="lum-btn" onClick={() => placeSelectedMediaAtPlayhead()}>
+          Overwrite
+        </button>
+        <label className="flex items-center gap-1 text-muted ml-auto">
+          Scrub
+          <input
+            type="range"
+            min={0}
+            max={mediaDur}
+            step={0.04}
+            value={Math.min(scrubSec, mediaDur)}
+            onChange={(e) => setScrubSec(Number(e.target.value))}
+            className="w-24"
+          />
+        </label>
       </div>
     </section>
   );

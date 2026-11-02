@@ -32,6 +32,12 @@ export function Timeline() {
   const slideSelected = useEditorStore((s) => s.slideSelected);
   const applyDefaultTransition = useEditorStore((s) => s.applyDefaultTransition);
   const trimSelected = useEditorStore((s) => s.trimSelected);
+  const addTrack = useEditorStore((s) => s.addTrack);
+  const removeTrack = useEditorStore((s) => s.removeTrack);
+  const placeAdjustmentLayer = useEditorStore((s) => s.placeAdjustmentLayer);
+  const transitionDurationSec = useEditorStore((s) => s.transitionDurationSec);
+  const setTransitionDurationSec = useEditorStore((s) => s.setTransitionDurationSec);
+  const setSequenceInOut = useEditorStore((s) => s.setSequenceInOut);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
@@ -83,6 +89,43 @@ export function Timeline() {
         </button>
         <button type="button" className="lum-btn" onClick={() => applyDefaultTransition()}>
           Dissolve
+        </button>
+        <label className="flex items-center gap-1 text-xs text-muted" title="Transition duration">
+          FX
+          <input
+            type="range"
+            min={0.1}
+            max={3}
+            step={0.1}
+            value={transitionDurationSec}
+            onChange={(e) => setTransitionDurationSec(Number(e.target.value))}
+            className="w-16"
+          />
+        </label>
+        <button type="button" className="lum-btn" onClick={() => addTrack("video")}>
+          +V
+        </button>
+        <button type="button" className="lum-btn" onClick={() => addTrack("audio")}>
+          +A
+        </button>
+        <button type="button" className="lum-btn" onClick={() => placeAdjustmentLayer()}>
+          ADJ
+        </button>
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSequenceInOut(playheadTicks, null)}
+          title="Sequence In"
+        >
+          Seq I
+        </button>
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSequenceInOut(sequence.inPoint, playheadTicks)}
+          title="Sequence Out"
+        >
+          Seq O
         </button>
         <button
           type="button"
@@ -148,8 +191,26 @@ export function Timeline() {
               }}
             >
               <div className="w-24 shrink-0 border-r border-line px-2 py-1 text-xs bg-panel sticky left-0 z-10">
-                <div className="font-medium truncate">{track.name}</div>
-                <div className="text-muted">{track.kind}{track.muted ? " · M" : ""}</div>
+                <div className="flex items-center gap-1">
+                  <div className="font-medium truncate flex-1">{track.name}</div>
+                  <button
+                    type="button"
+                    className="text-muted hover:text-accent2"
+                    title="Remove track"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (tracks.length <= 1) return;
+                      removeTrack(track.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="text-muted">
+                  {track.kind}
+                  {track.muted ? " · M" : ""}
+                  {track.kind === "adjustment" ? " · FX" : ""}
+                </div>
               </div>
               <div className="relative flex-1" style={{ width: widthPx }}>
                 {track.clips.map((clip) => {
@@ -168,7 +229,11 @@ export function Timeline() {
                       role="button"
                       tabIndex={0}
                       className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden border ${
-                        track.kind === "audio" ? "bg-audio/70 border-audio" : "bg-clip/70 border-clip"
+                        track.kind === "audio"
+                          ? "bg-audio/70 border-audio"
+                          : track.kind === "adjustment"
+                            ? "bg-accent/30 border-accent"
+                            : "bg-clip/70 border-clip"
                       } ${selected ? "ring-2 ring-accent2" : ""} ${
                         tool === "select" ? "cursor-grab" : "cursor-ew-resize"
                       }`}

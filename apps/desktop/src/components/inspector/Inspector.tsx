@@ -22,6 +22,11 @@ export function Inspector() {
   const setPreviewMask = useEditorStore((s) => s.setPreviewMask);
   const attachProxyToMedia = useEditorStore((s) => s.attachProxyToMedia);
   const setSelectedBlendMode = useEditorStore((s) => s.setSelectedBlendMode);
+  const copySelectedAttributes = useEditorStore((s) => s.copySelectedAttributes);
+  const pasteAttributesToSelected = useEditorStore((s) => s.pasteAttributesToSelected);
+  const copiedAttributes = useEditorStore((s) => s.copiedAttributes);
+  const floatingInspector = useEditorStore((s) => s.floatingInspector);
+  const setFloatingInspector = useEditorStore((s) => s.setFloatingInspector);
   const [mask, setMask] = useState<MaskShape>(() => createRectMask());
   const [proxyStatus, setProxyStatus] = useState<string>("");
   const sequence = requireActiveSequence(project);
@@ -48,8 +53,15 @@ export function Inspector() {
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
-      <header className="px-2 py-1.5 border-b border-line text-sm font-medium">
-        {t(locale, "panel.inspector")}
+      <header className="flex items-center justify-between px-2 py-1.5 border-b border-line text-sm font-medium">
+        <span>{t(locale, "panel.inspector")}</span>
+        <button
+          type="button"
+          className={`lum-btn text-[10px] ${floatingInspector ? "border-accent text-accent" : ""}`}
+          onClick={() => setFloatingInspector(!floatingInspector)}
+        >
+          {floatingInspector ? "Dock" : "Float"}
+        </button>
       </header>
       <div className="flex-1 overflow-auto lum-scroll p-2 text-sm space-y-3">
         {clip ? (
@@ -114,6 +126,17 @@ export function Inspector() {
               </button>
               <button type="button" className="lum-btn" onClick={() => addMarkerAtPlayhead()}>
                 Marker
+              </button>
+              <button type="button" className="lum-btn" onClick={() => copySelectedAttributes()}>
+                Copy attrs
+              </button>
+              <button
+                type="button"
+                className="lum-btn"
+                disabled={!copiedAttributes}
+                onClick={() => pasteAttributesToSelected()}
+              >
+                Paste attrs
               </button>
             </div>
 

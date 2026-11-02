@@ -19,6 +19,12 @@ import {
   AddEffectCommand,
   SetBlendModeCommand,
   SwitchMulticamAngleCommand,
+  AddTrackCommand,
+  RemoveTrackCommand,
+  PlaceAdjustmentClipCommand,
+  SetSequenceInOutCommand,
+  PasteAttributesCommand,
+  extractClipAttributes,
   buildMulticamAngles,
   placeMulticamAngles,
   findMulticamStack,
@@ -41,6 +47,7 @@ import {
   exportOtioJson,
   exportAafLite,
   classifyMediaKind,
+  createWarmDemoLut,
   type Project,
   type MediaItem,
   type EditTool,
@@ -49,6 +56,9 @@ import {
   type HotkeyPresetId,
   type MediaKind,
   type BlendMode,
+  type ClipAttributes,
+  type Lut3D,
+  type TrackKind,
 } from "@lumina/core";
 import type { Locale } from "@lumina/i18n";
 import { ensureDemoMedia, exportSequenceApi, probePath, scanWatchFolder } from "../lib/media-api";
@@ -102,6 +112,26 @@ export interface EditorState {
   layoutPrefs: { poolWidth: number; inspectorWidth: number };
   setLayoutPrefs: (patch: Partial<{ poolWidth: number; inspectorWidth: number }>) => void;
   multicamAngle: number;
+  activeLut: Lut3D | null;
+  lutStrength: number;
+  copiedAttributes: ClipAttributes | null;
+  sourceInSec: number;
+  sourceOutSec: number;
+  floatingInspector: boolean;
+  setActiveLut: (lut: Lut3D | null) => void;
+  setLutStrength: (v: number) => void;
+  loadDemoLut: () => void;
+  addTrack: (kind: TrackKind) => void;
+  removeTrack: (trackId: string) => void;
+  placeAdjustmentLayer: () => void;
+  setSequenceInOut: (inPoint: bigint | null, outPoint: bigint | null) => void;
+  copySelectedAttributes: () => void;
+  pasteAttributesToSelected: () => void;
+  setSourceInOut: (mark: "in" | "out", seconds: number) => void;
+  threePointInsert: () => void;
+  setFloatingInspector: (v: boolean) => void;
+  transitionDurationSec: number;
+  setTransitionDurationSec: (v: number) => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -177,8 +207,112 @@ export const useEditorStore = create<EditorState>((set, get) => {
     watchFolders: [],
     layoutPrefs: { poolWidth: 260, inspectorWidth: 280 },
     multicamAngle: 0,
+    activeLut: null,
+    lutStrength: 1,
+    copiedAttributes: null,
+    sourceInSec: 0,
+    sourceOutSec: 5,
+    floatingInspector: false,
+    transitionDurationSec: 1,
 
     setLocale: (locale) => set({ locale }),
+    setActiveLut: (lut) => set({ activeLut: lut }),
+    setLutStrength: (v) => set({ lutStrength: Math.min(1, Math.max(0, v)) }),
+    loadDemoLut: () => set({ activeLut: createWarmDemoLut(17), status: "Loaded warm demo LUT" }),
+    setFloatingInspector: (v) => set({ floatingInspector: v }),
+    setTransitionDurationSec: (v) => set({ transitionDurationSec: Math.max(0.1, v) }),
+    setSourceInOut: (mark, seconds) => {
+      if (mark === "in") set({ sourceInSec: Math.max(0, seconds) });
+      else set({ sourceOutSec: Math.max(get().sourceInSec + 0.04, seconds) });
+    },
+    addTrack: (kind) => {
+      const { history, revision } = get();
+      history.push(new AddTrackCommand(kind));
+      set(bump(sync(history), revision, `Added ${kind} track`));
+    },
+    removeTrack: (trackId) => {
+      const { history, revision } = get();
+      history.push(new RemoveTrackCommand(trackId));
+      set(bump(sync(history), revision, "Removed track"));
+    },
+    placeAdjustmentLayer: () => {
+      const { history, project, playheadTicks, revision } = get();
+      let sequence = requireActiveSequence(project);
+      let adj = sequence.videoTracks.find((t) => t.kind === "adjustment");
+      if (!adj) {
+        history.push(new AddTrackCommand("adjustment"));
+        sequence = requireActiveSequence(sync(history));
+        adj = sequence.videoTracks.find((t) => t.kind === "adjustment");
+      }
+      if (!adj) return;
+      const dur = secondsToTicks(5);
+      history.push(new PlaceAdjustmentClipCommand(adj.id, playheadTicks, dur));
+      set(bump(sync(history), revision, "Adjustment layer placed"));
+    },
+    setSequenceInOut: (inPoint, outPoint) => {
+      const { history, revision } = get();
+      history.push(new SetSequenceInOutCommand(inPoint, outPoint));
+      set(bump(sync(history), revision, "Sequence In/Out set"));
+    },
+    copySelectedAttributes: () => {
+      const { project, selectedClipId } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        const clip = track.clips.find((c) => c.id === selectedClipId);
+        if (!clip) continue;
+        set({
+          copiedAttributes: extractClipAttributes(clip),
+          status: "Attributes copied",
+        });
+        return;
+      }
+    },
+    pasteAttributesToSelected: () => {
+      const { history, project, selectedClipId, copiedAttributes, revision } = get();
+      if (!selectedClipId || !copiedAttributes) {
+        set({ status: "Nothing to paste" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(new PasteAttributesCommand(track.id, selectedClipId, copiedAttributes));
+        set(bump(sync(history), revision, "Attributes pasted"));
+        return;
+      }
+    },
+    threePointInsert: () => {
+      const { selectedMediaId, project, sourceInSec, sourceOutSec, playheadTicks } = get();
+      if (!selectedMediaId) {
+        set({ status: "Select media for 3-point insert" });
+        return;
+      }
+      const media = project.media.find((m) => m.id === selectedMediaId);
+      if (!media) return;
+      const sequence = requireActiveSequence(project);
+      const trackId =
+        media.kind === "audio"
+          ? sequence.audioTracks[0]!.id
+          : sequence.videoTracks[sequence.videoTracks.length - 1]!.id;
+      const inTicks = secondsToTicks(sourceInSec);
+      const outTicks = secondsToTicks(sourceOutSec);
+      const duration = outTicks > inTicks ? outTicks - inTicks : secondsToTicks(5);
+      const clip = createClip({
+        kind: media.kind === "audio" ? "audio" : media.kind === "image" ? "image" : "video",
+        source: { type: "media", mediaId: media.id },
+        start: playheadTicks,
+        duration,
+        inPoint: inTicks,
+        outPoint: inTicks + duration,
+        name: media.name,
+      });
+      get().history.push(new PlaceClipCommand(trackId, clip, "overwrite"));
+      set({
+        ...bump(sync(get().history), get().revision, `3-point insert ${media.name}`),
+        selectedClipId: clip.id,
+      });
+    },
     setLayoutPrefs: (patch) =>
       set({ layoutPrefs: { ...get().layoutPrefs, ...patch } }),
     addWatchFolder: (dir) => {
@@ -671,6 +805,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           outputPath: next.outputPath,
           dryRun: false,
           mode,
+          preferredFadeSeconds: get().transitionDurationSec,
         });
         if (!result.ok) {
           mark(next.id, {
@@ -806,6 +941,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         outputPath,
         dryRun,
         mode,
+        preferredFadeSeconds: get().transitionDurationSec,
       });
       if (!result.ok) {
         set({ status: result.error ?? "Export failed" });

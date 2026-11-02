@@ -202,10 +202,15 @@ export function luminaMediaApi(): Plugin {
               outputPath: string;
               dryRun?: boolean;
               mode?: "concat" | "overlay";
+              preferredFadeSeconds?: number;
             };
             payload.outputPath = assertAllowedPath(payload.outputPath, ROOTS);
             const revived = reviveProjectBits(payload);
-            const withMode = { ...revived, mode: payload.mode };
+            const withMode = {
+              ...revived,
+              mode: payload.mode,
+              preferredFadeSeconds: payload.preferredFadeSeconds,
+            };
             if (payload.dryRun) {
               const cmd = buildSequenceExportCommand(withMode);
               json(res, {

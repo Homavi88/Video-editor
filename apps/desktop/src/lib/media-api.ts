@@ -136,6 +136,7 @@ export async function exportSequenceApi(input: {
   outputPath: string;
   dryRun?: boolean;
   mode?: "concat" | "overlay";
+  preferredFadeSeconds?: number;
 }): Promise<{
   ok: boolean;
   args?: string[];

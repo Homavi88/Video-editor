@@ -4,3 +4,5 @@ export * from "./edit-commands.js";
 export * from "./advanced-edit.js";
 export * from "./effect-commands.js";
 export * from "./multicam.js";
+export * from "./track-commands.js";
+export * from "./attribute-commands.js";

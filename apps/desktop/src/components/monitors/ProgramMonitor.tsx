@@ -11,9 +11,49 @@ import { formatTimecode, useEditorStore } from "../../store/editor-store";
 import { isFileBacked, mediaStreamUrl } from "../../lib/media-api";
 import { getCachedFrame, prefetchFrames, quantizeTime } from "../../lib/frame-cache";
 import { ContinuousPreview } from "../../lib/webcodecs-preview";
-import { applyClipEffectsToRenderer } from "../../lib/apply-clip-effects";
+import {
+  applyAdjustmentEffects,
+  applyClipEffectsToRenderer,
+} from "../../lib/apply-clip-effects";
 
 const PREVIEW_FPS = 12;
+
+function finishPreviewPass(
+  renderer: WebGLPreviewRenderer,
+  opts: {
+    clip: import("@lumina/core").Clip | undefined;
+    playheadTicks: bigint;
+    previewMask: import("@lumina/core").MaskShape | null;
+    adjustmentClips: readonly import("@lumina/core").Clip[];
+    activeLut: import("@lumina/core").Lut3D | null;
+    lutStrength: number;
+    lutUploadedRef: { current: string | null };
+  },
+): void {
+  if (opts.clip) applyClipEffectsToRenderer(renderer, opts.clip, opts.playheadTicks);
+  if (opts.adjustmentClips.length) {
+    applyAdjustmentEffects(renderer, opts.adjustmentClips, opts.playheadTicks);
+  }
+  if (opts.activeLut) {
+    const key = `${opts.activeLut.title}|${opts.activeLut.size}|${opts.activeLut.data.length}`;
+    if (opts.lutUploadedRef.current !== key) {
+      renderer.setLut3D(opts.activeLut.size, opts.activeLut.data);
+      opts.lutUploadedRef.current = key;
+    }
+    renderer.applyLut(opts.lutStrength);
+  } else if (opts.lutUploadedRef.current) {
+    renderer.clearLut();
+    opts.lutUploadedRef.current = null;
+  }
+  if (opts.previewMask) {
+    renderer.applyRectMask(
+      opts.previewMask.bounds,
+      opts.previewMask.feather,
+      opts.previewMask.inverted,
+      opts.previewMask.kind === "ellipse" ? "ellipse" : "rect",
+    );
+  }
+}
 
 export function ProgramMonitor() {
   const locale = useEditorStore((s) => s.locale);
@@ -23,16 +63,20 @@ export function ProgramMonitor() {
   const revision = useEditorStore((s) => s.revision);
   const previewMask = useEditorStore((s) => s.previewMask);
   const titleOverlay = useEditorStore((s) => s.titleOverlay);
+  const activeLut = useEditorStore((s) => s.activeLut);
+  const lutStrength = useEditorStore((s) => s.lutStrength);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
   const continuousRef = useRef<ContinuousPreview | null>(null);
+  const lutUploadedRef = useRef<string | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const lastKeyRef = useRef<string>("");
   const sequence = requireActiveSequence(project);
   const fps = sequence.frameRate.numerator / sequence.frameRate.denominator;
 
   const active = findActiveVideo(project, playheadTicks);
+  const adjustmentClips = findAdjustmentClips(project, playheadTicks);
   const sourceSec = active ? ticksToSeconds(active.sourceTime) : 0;
   const quantized = quantizeTime(sourceSec, PREVIEW_FPS);
   const frameKey = active ? `${active.mediaPath}|${quantized}` : "";
@@ -86,15 +130,15 @@ export function ProgramMonitor() {
           ? active.blendMode
           : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
         renderer.drawImageSource(source, 1, blend);
-        applyClipEffectsToRenderer(renderer, active.clip, playheadTicks);
-        if (previewMask) {
-          renderer.applyRectMask(
-            previewMask.bounds,
-            previewMask.feather,
-            previewMask.inverted,
-            previewMask.kind === "ellipse" ? "ellipse" : "rect",
-          );
-        }
+        finishPreviewPass(renderer, {
+          clip: active.clip,
+          playheadTicks,
+          previewMask,
+          adjustmentClips,
+          activeLut,
+          lutStrength,
+          lutUploadedRef,
+        });
         if (source instanceof ImageBitmap) source.close();
       });
     })();
@@ -104,7 +148,17 @@ export function ProgramMonitor() {
       preview.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, active?.mediaPath, active?.clipId, revision, previewMask, playheadTicks]);
+  }, [
+    playing,
+    active?.mediaPath,
+    active?.clipId,
+    revision,
+    previewMask,
+    playheadTicks,
+    activeLut,
+    lutStrength,
+    adjustmentClips.length,
+  ]);
 
   // Resync continuous decoder if it drifts from the timeline clock.
   useEffect(() => {
@@ -174,20 +228,30 @@ export function ProgramMonitor() {
         ? active.blendMode
         : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
       renderer.drawImageSource(img, 1, blend);
-      if (active?.clip) applyClipEffectsToRenderer(renderer, active.clip, playheadTicks);
-      if (previewMask) {
-        renderer.applyRectMask(
-          previewMask.bounds,
-          previewMask.feather,
-          previewMask.inverted,
-          previewMask.kind === "ellipse" ? "ellipse" : "rect",
-        );
-      }
+      finishPreviewPass(renderer, {
+        clip: active?.clip,
+        playheadTicks,
+        previewMask,
+        adjustmentClips,
+        activeLut,
+        lutStrength,
+        lutUploadedRef,
+      });
     };
     img.addEventListener("load", onLoad);
     if (img.complete) onLoad();
     return () => img.removeEventListener("load", onLoad);
-  }, [frameUrl, previewMask, playing, active?.blendMode, active?.clip, playheadTicks]);
+  }, [
+    frameUrl,
+    previewMask,
+    playing,
+    active?.blendMode,
+    active?.clip,
+    playheadTicks,
+    activeLut,
+    lutStrength,
+    adjustmentClips,
+  ]);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -236,8 +300,11 @@ function findActiveVideo(
   clip: import("@lumina/core").Clip;
 } | null {
   const sequence = requireActiveSequence(project);
-  for (const track of sequence.videoTracks) {
-    if (track.hidden || track.muted) continue;
+  // Bottom-up so lower tracks win when no true compositor pass yet;
+  // skip adjustment tracks (generated) here — their FX stack is applied after.
+  for (let i = sequence.videoTracks.length - 1; i >= 0; i -= 1) {
+    const track = sequence.videoTracks[i]!;
+    if (track.hidden || track.muted || track.kind === "adjustment") continue;
     for (const clip of track.clips) {
       if (!clip.enabled || time < clip.start || time >= clipEnd(clip)) continue;
       const source = clip.source;
@@ -260,4 +327,20 @@ function findActiveVideo(
     }
   }
   return null;
+}
+
+function findAdjustmentClips(
+  project: ReturnType<typeof useEditorStore.getState>["project"],
+  time: bigint,
+): import("@lumina/core").Clip[] {
+  const sequence = requireActiveSequence(project);
+  const out: import("@lumina/core").Clip[] = [];
+  for (const track of sequence.videoTracks) {
+    if (track.kind !== "adjustment" || track.hidden || track.muted) continue;
+    for (const clip of track.clips) {
+      if (!clip.enabled || time < clip.start || time >= clipEnd(clip)) continue;
+      out.push(clip);
+    }
+  }
+  return out;
 }
