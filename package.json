@@ -1,0 +1,21 @@
+{
+  "name": "lumina",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lumina — multi-track non-linear video editor",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @lumina/core",
+    "test": "npm run test -w @lumina/core",
+    "typecheck": "npm run typecheck -w @lumina/core",
+    "lint": "npm run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "Homavi88"
+}

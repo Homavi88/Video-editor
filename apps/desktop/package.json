@@ -1,0 +1,11 @@
+{
+  "name": "@lumina/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lumina Electron shell — scaffolded in Stage 1",
+  "scripts": {},
+  "dependencies": {
+    "@lumina/core": "0.0.1"
+  },
+  "license": "MIT"
+}
