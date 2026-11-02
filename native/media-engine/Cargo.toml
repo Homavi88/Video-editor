@@ -1,0 +1,19 @@
+[package]
+name = "lumina-media-engine"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+description = "Lumina native media engine (decode, proxy, peaks, export) — napi-rs bindings land in Stage 2"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Stage 2+: napi = { version = "2", features = ["napi8"] }
+# Stage 2+: napi-derive = "2"
+# Stage 2+: ffmpeg-next / ffmpeg-sys-next (LGPL), tracing, thiserror, serde
+
+[profile.release]
+lto = true
+codegen-units = 1

@@ -1,0 +1,24 @@
+{
+  "name": "lumina",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lumina — multi-track non-linear video editor",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @lumina/core && npm run build -w @lumina/i18n && npm run build -w @lumina/media-client && npm run build -w @lumina/effects && npm run build -w @lumina/plugin-sdk && npm run build -w @lumina/ai && npm run build -w @lumina/desktop",
+    "test": "npm run test -w @lumina/core && npm run test -w @lumina/plugin-sdk && npm run test -w @lumina/ai && npm run test -w @lumina/desktop && npm run test -w @lumina/media-client",
+    "typecheck": "npm run typecheck -w @lumina/core && npm run typecheck -w @lumina/i18n && npm run typecheck -w @lumina/media-client && npm run typecheck -w @lumina/effects && npm run typecheck -w @lumina/plugin-sdk && npm run typecheck -w @lumina/ai && npm run typecheck -w @lumina/desktop",
+    "dev": "npm run dev -w @lumina/desktop",
+    "lint": "npm run typecheck",
+    "native:test": "cargo test --manifest-path native/media-engine/Cargo.toml",
+    "pack:linux": "node scripts/pack-linux.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "Homavi88"
+}

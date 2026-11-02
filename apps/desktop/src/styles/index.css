@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+[data-theme="dark"] {
+  --lum-canvas: #0e1116;
+  --lum-panel: #161b22;
+  --lum-ink: #e8eef6;
+  --lum-muted: #8b98a8;
+  --lum-line: #2a3340;
+  --lum-accent: #3d9bfd;
+  --lum-accent-2: #f0b429;
+  --lum-danger: #e35d6a;
+  --lum-clip: #2f6fed;
+  --lum-audio: #2f9e6b;
+}
+
+[data-theme="light"] {
+  --lum-canvas: #dfe6ef;
+  --lum-panel: #f4f7fb;
+  --lum-ink: #15202b;
+  --lum-muted: #5b6b7c;
+  --lum-line: #c3cedb;
+  --lum-accent: #1f6feb;
+  --lum-accent-2: #b78103;
+  --lum-danger: #cf222e;
+  --lum-clip: #2f6fed;
+  --lum-audio: #1a7f4b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, color-mix(in oklab, var(--lum-accent) 18%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, color-mix(in oklab, var(--lum-accent-2) 12%, transparent), transparent 55%),
+    var(--lum-canvas);
+  color: var(--lum-ink);
+}
+
+@layer components {
+  .lum-panel {
+    @apply bg-panel border border-line overflow-hidden;
+  }
+
+  .lum-btn {
+    @apply px-2.5 py-1 text-sm border border-line bg-transparent hover:border-accent hover:text-accent transition-colors;
+  }
+
+  .lum-btn-primary {
+    @apply px-2.5 py-1 text-sm border border-accent text-accent transition-colors;
+    background: color-mix(in oklab, var(--lum-accent) 18%, transparent);
+  }
+  .lum-btn-primary:hover {
+    background: color-mix(in oklab, var(--lum-accent) 28%, transparent);
+  }
+
+  .lum-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--lum-line) transparent;
+  }
+}
