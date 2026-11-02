@@ -7,6 +7,8 @@ import {
   clipEnd,
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
+import { Waveform } from "./Waveform";
+import { Filmstrip } from "./Filmstrip";
 
 export function Timeline() {
   const locale = useEditorStore((s) => s.locale);
@@ -24,11 +26,30 @@ export function Timeline() {
   const dropMediaOnTimeline = useEditorStore((s) => s.dropMediaOnTimeline);
   const moveSelected = useEditorStore((s) => s.moveSelected);
   const splitAtPlayhead = useEditorStore((s) => s.splitAtPlayhead);
+  const rippleTrimSelected = useEditorStore((s) => s.rippleTrimSelected);
+  const rollSelectedEdit = useEditorStore((s) => s.rollSelectedEdit);
+  const slipSelected = useEditorStore((s) => s.slipSelected);
+  const slideSelected = useEditorStore((s) => s.slideSelected);
+  const applyDefaultTransition = useEditorStore((s) => s.applyDefaultTransition);
+  const trimSelected = useEditorStore((s) => s.trimSelected);
+  const addTrack = useEditorStore((s) => s.addTrack);
+  const removeTrack = useEditorStore((s) => s.removeTrack);
+  const placeAdjustmentLayer = useEditorStore((s) => s.placeAdjustmentLayer);
+  const transitionDurationSec = useEditorStore((s) => s.transitionDurationSec);
+  const setTransitionDurationSec = useEditorStore((s) => s.setTransitionDurationSec);
+  const setSequenceInOut = useEditorStore((s) => s.setSequenceInOut);
+  const zoomToFit = useEditorStore((s) => s.zoomToFit);
+  const zoomToPlayhead = useEditorStore((s) => s.zoomToPlayhead);
+  const linkSelectedAv = useEditorStore((s) => s.linkSelectedAv);
+  const unlinkSelected = useEditorStore((s) => s.unlinkSelected);
+  const replaceSelectedWithMedia = useEditorStore((s) => s.replaceSelectedWithMedia);
+  const reverseSelected = useEditorStore((s) => s.reverseSelected);
+  const addMarkerAtPlayhead = useEditorStore((s) => s.addMarkerAtPlayhead);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
-    () => [...sequence.videoTracks, ...sequence.audioTracks],
-    [sequence.audioTracks, sequence.videoTracks],
+    () => [...sequence.videoTracks, ...sequence.subtitleTracks, ...sequence.audioTracks],
+    [sequence.audioTracks, sequence.subtitleTracks, sequence.videoTracks],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -56,10 +77,80 @@ export function Timeline() {
           V
         </button>
         <button type="button" className={`lum-btn ${tool === "razor" ? "border-accent" : ""}`} onClick={() => setTool("razor")}>
-          B
+          C
+        </button>
+        <button type="button" className={`lum-btn ${tool === "ripple" ? "border-accent" : ""}`} onClick={() => setTool("ripple")}>
+          Ripple
+        </button>
+        <button type="button" className={`lum-btn ${tool === "roll" ? "border-accent" : ""}`} onClick={() => setTool("roll")}>
+          Roll
+        </button>
+        <button type="button" className={`lum-btn ${tool === "slip" ? "border-accent" : ""}`} onClick={() => setTool("slip")}>
+          Slip
+        </button>
+        <button type="button" className={`lum-btn ${tool === "slide" ? "border-accent" : ""}`} onClick={() => setTool("slide")}>
+          Slide
         </button>
         <button type="button" className="lum-btn" onClick={() => splitAtPlayhead()}>
           {t(locale, "action.split")}
+        </button>
+        <button type="button" className="lum-btn" onClick={() => applyDefaultTransition()}>
+          Dissolve
+        </button>
+        <label className="flex items-center gap-1 text-xs text-muted" title="Transition duration">
+          FX
+          <input
+            type="range"
+            min={0.1}
+            max={3}
+            step={0.1}
+            value={transitionDurationSec}
+            onChange={(e) => setTransitionDurationSec(Number(e.target.value))}
+            className="w-16"
+          />
+        </label>
+        <button type="button" className="lum-btn" onClick={() => addTrack("video")}>
+          +V
+        </button>
+        <button type="button" className="lum-btn" onClick={() => addTrack("audio")}>
+          +A
+        </button>
+        <button type="button" className="lum-btn" onClick={() => addTrack("subtitle")}>
+          +S
+        </button>
+        <button type="button" className="lum-btn" onClick={() => placeAdjustmentLayer()}>
+          ADJ
+        </button>
+        <button type="button" className="lum-btn" onClick={() => linkSelectedAv()}>
+          Link
+        </button>
+        <button type="button" className="lum-btn" onClick={() => unlinkSelected()}>
+          Unlink
+        </button>
+        <button type="button" className="lum-btn" onClick={() => replaceSelectedWithMedia()}>
+          Replace
+        </button>
+        <button type="button" className="lum-btn" onClick={() => reverseSelected()}>
+          ⌫
+        </button>
+        <button type="button" className="lum-btn" onClick={() => addMarkerAtPlayhead()}>
+          M
+        </button>
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSequenceInOut(playheadTicks, null)}
+          title="Sequence In"
+        >
+          Seq I
+        </button>
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => setSequenceInOut(sequence.inPoint, playheadTicks)}
+          title="Sequence Out"
+        >
+          Seq O
         </button>
         <button
           type="button"
@@ -78,6 +169,12 @@ export function Timeline() {
             onChange={(e) => setZoom(Number(e.target.value))}
           />
         </label>
+        <button type="button" className="lum-btn" onClick={() => zoomToFit()}>
+          Fit
+        </button>
+        <button type="button" className="lum-btn" onClick={() => zoomToPlayhead()}>
+          ▶︎
+        </button>
         <span className="font-mono text-xs text-accent2">
           {formatTimecode(playheadTicks, Math.round(sequence.frameRate.numerator / sequence.frameRate.denominator))}
         </span>
@@ -107,6 +204,28 @@ export function Timeline() {
                 {i}s
               </div>
             ))}
+            {sequence.markers.map((m) => (
+              <div
+                key={m.id}
+                className="absolute top-0 h-full w-0.5 bg-accent2"
+                style={{ left: ticksToSeconds(m.time) * pxPerSecond }}
+                title={m.name}
+              />
+            ))}
+            {sequence.inPoint !== null ? (
+              <div
+                className="absolute top-0 h-full w-0.5 bg-accent"
+                style={{ left: ticksToSeconds(sequence.inPoint) * pxPerSecond }}
+                title="In"
+              />
+            ) : null}
+            {sequence.outPoint !== null ? (
+              <div
+                className="absolute top-0 h-full w-0.5 bg-accent"
+                style={{ left: ticksToSeconds(sequence.outPoint) * pxPerSecond }}
+                title="Out"
+              />
+            ) : null}
           </div>
 
           {tracks.map((track) => (
@@ -117,28 +236,62 @@ export function Timeline() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const mediaId = e.dataTransfer.getData("application/x-lumina-media");
+                const mediaId =
+                  e.dataTransfer.getData("application/x-lumina-media") ||
+                  e.dataTransfer.getData("text/plain");
                 if (!mediaId) return;
                 dropMediaOnTimeline(mediaId, track.id, ticksFromClientX(e.clientX));
               }}
             >
               <div className="w-24 shrink-0 border-r border-line px-2 py-1 text-xs bg-panel sticky left-0 z-10">
-                <div className="font-medium truncate">{track.name}</div>
-                <div className="text-muted">{track.kind}{track.muted ? " · M" : ""}</div>
+                <div className="flex items-center gap-1">
+                  <div className="font-medium truncate flex-1">{track.name}</div>
+                  <button
+                    type="button"
+                    className="text-muted hover:text-accent2"
+                    title="Remove track"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (tracks.length <= 1) return;
+                      removeTrack(track.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="text-muted">
+                  {track.kind}
+                  {track.muted ? " · M" : ""}
+                  {track.kind === "adjustment" ? " · FX" : ""}
+                </div>
               </div>
               <div className="relative flex-1" style={{ width: widthPx }}>
                 {track.clips.map((clip) => {
                   const left = ticksToSeconds(clip.start) * pxPerSecond;
                   const width = Math.max(4, ticksToSeconds(clip.duration) * pxPerSecond);
                   const selected = clip.id === selectedClipId;
+                  const source = clip.source;
+                  const mediaPath =
+                    source.type === "media"
+                      ? project.media.find((m) => m.id === source.mediaId)?.path
+                      : undefined;
+                  const hasDissolve = Boolean(clip.transitionOutId);
                   return (
                     <div
                       key={clip.id}
                       role="button"
                       tabIndex={0}
-                      className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden cursor-grab border ${
-                        track.kind === "audio" ? "bg-audio/70 border-audio" : "bg-clip/70 border-clip"
-                      } ${selected ? "ring-2 ring-accent2" : ""}`}
+                      className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden border ${
+                        track.kind === "audio"
+                          ? "bg-audio/70 border-audio"
+                          : track.kind === "subtitle"
+                            ? "bg-accent2/25 border-accent2"
+                            : track.kind === "adjustment"
+                              ? "bg-accent/30 border-accent"
+                              : "bg-clip/70 border-clip"
+                      } ${selected ? "ring-2 ring-accent2" : ""} ${
+                        tool === "select" ? "cursor-grab" : "cursor-ew-resize"
+                      }`}
                       style={{ left, width }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -149,23 +302,89 @@ export function Timeline() {
                         }
                       }}
                       onPointerDown={(e) => {
-                        if (tool !== "select") return;
+                        e.stopPropagation();
                         selectClip(clip.id);
                         const origin = ticksFromClientX(e.clientX);
                         const start0 = clip.start;
+                        const end0 = clipEnd(clip);
+                        const edgeZone = secondsToTicks(8 / pxPerSecond);
+                        const nearIn = origin - clip.start < edgeZone;
+                        const nearOut = end0 - origin < edgeZone;
+                        let last = origin;
+
+                        if (tool === "razor") return;
+
                         const onMove = (ev: PointerEvent) => {
                           const now = ticksFromClientX(ev.clientX);
-                          moveSelected(start0 + (now - origin));
+                          last = now;
+                          // Live preview only for select-move (coalesced enough for scrubbing).
+                          if (tool === "select" && !nearIn && !nearOut) {
+                            moveSelected(start0 + (now - origin));
+                          }
                         };
                         const onUp = () => {
                           window.removeEventListener("pointermove", onMove);
                           window.removeEventListener("pointerup", onUp);
+                          const delta = last - origin;
+                          if (delta === 0n) return;
+                          if (tool === "select") {
+                            if (nearIn) {
+                              const newStart = start0 + delta < 0n ? 0n : start0 + delta;
+                              const newDur = end0 - newStart;
+                              if (newDur > 0n) {
+                                trimSelected({
+                                  start: newStart,
+                                  duration: newDur,
+                                  inPoint: clip.inPoint + delta,
+                                });
+                              }
+                            } else if (nearOut) {
+                              const newEnd = end0 + delta;
+                              if (newEnd > start0) {
+                                trimSelected({
+                                  duration: newEnd - start0,
+                                  outPoint: clip.outPoint + delta,
+                                });
+                              }
+                            }
+                            // move already applied live
+                            return;
+                          }
+                          if (tool === "ripple") {
+                            const edge = nearIn ? "in" : "out";
+                            rippleTrimSelected(edge, edge === "in" ? start0 + delta : end0 + delta);
+                            return;
+                          }
+                          if (tool === "roll") {
+                            rollSelectedEdit(nearIn ? start0 + delta : end0 + delta);
+                            return;
+                          }
+                          if (tool === "slip") {
+                            slipSelected(delta);
+                            return;
+                          }
+                          if (tool === "slide") {
+                            slideSelected(start0 + delta);
+                          }
                         };
                         window.addEventListener("pointermove", onMove);
                         window.addEventListener("pointerup", onUp);
                       }}
                     >
-                      <div className="truncate font-medium">{clip.name}</div>
+                      {track.kind === "audio" && mediaPath ? (
+                        <Waveform mediaPath={mediaPath} width={width} height={track.height - 8} />
+                      ) : null}
+                      {track.kind === "video" && mediaPath ? (
+                        <Filmstrip
+                          mediaPath={mediaPath}
+                          durationSeconds={ticksToSeconds(clip.duration)}
+                          inPointSeconds={ticksToSeconds(clip.inPoint)}
+                        />
+                      ) : null}
+                      <div className="truncate font-medium relative z-10 drop-shadow">{clip.name}</div>
+                      {hasDissolve ? (
+                        <div className="absolute right-0 top-0 bottom-0 w-3 bg-accent2/50 pointer-events-none" title="Cross Dissolve" />
+                      ) : null}
                     </div>
                   );
                 })}

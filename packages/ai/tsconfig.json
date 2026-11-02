@@ -12,7 +12,8 @@
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"]
 }

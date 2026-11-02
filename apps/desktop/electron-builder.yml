@@ -1,0 +1,25 @@
+appId: com.lumina.editor
+productName: Lumina
+copyright: Copyright © Lumina
+directories:
+  output: ../../release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+extraMetadata:
+  main: electron/main.mjs
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Video
+mac:
+  target:
+    - dmg
+  category: public.app-category.video
+win:
+  target:
+    - nsis
+asar: true

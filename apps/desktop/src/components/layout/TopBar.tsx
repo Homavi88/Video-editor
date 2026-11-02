@@ -17,6 +17,10 @@ export function TopBar() {
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const revision = useEditorStore((s) => s.revision);
   const history = useEditorStore((s) => s.history);
+  const floatingInspector = useEditorStore((s) => s.floatingInspector);
+  const setFloatingInspector = useEditorStore((s) => s.setFloatingInspector);
+  const loopPlayback = useEditorStore((s) => s.loopPlayback);
+  const setLoopPlayback = useEditorStore((s) => s.setLoopPlayback);
   const canUndo = history.canUndo;
   const canRedo = history.canRedo;
   void revision;
@@ -51,6 +55,22 @@ export function TopBar() {
         </button>
         <button type="button" className="lum-btn-primary" onClick={() => setPlaying(!playing)}>
           {playing ? "Pause" : t(locale, "action.play")}
+        </button>
+        <button
+          type="button"
+          className={`lum-btn ${loopPlayback ? "border-accent text-accent" : ""}`}
+          onClick={() => setLoopPlayback(!loopPlayback)}
+          title="Loop playback (uses Seq In/Out when set)"
+        >
+          Loop
+        </button>
+        <button
+          type="button"
+          className={`lum-btn ${floatingInspector ? "border-accent text-accent" : ""}`}
+          onClick={() => setFloatingInspector(!floatingInspector)}
+          title="Float Inspector"
+        >
+          Float
         </button>
         <button
           type="button"

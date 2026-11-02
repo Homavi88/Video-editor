@@ -23,11 +23,21 @@ export function useKeyboardShortcuts(): void {
         store.setPlaying(!store.playing);
         return;
       }
-      if (e.key === "c" || e.key === "C") {
+      if (meta && e.key.toLowerCase() === "c" && store.selectedClipId) {
+        e.preventDefault();
+        store.copySelectedAttributes();
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "v" && store.copiedAttributes) {
+        e.preventDefault();
+        store.pasteAttributesToSelected();
+        return;
+      }
+      if ((e.key === "c" || e.key === "C") && !meta) {
         store.splitAtPlayhead();
         return;
       }
-      if (e.key === "v" || e.key === "V") {
+      if ((e.key === "v" || e.key === "V") && !meta) {
         store.setTool("select");
         return;
       }
@@ -50,6 +60,19 @@ export function useKeyboardShortcuts(): void {
       }
       if (e.key === "k" || e.key === "K") {
         store.setPlaying(false);
+        return;
+      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.key === "i" || e.key === "I") && !meta) {
+        store.setSourceInOut("in", 0);
+        return;
+      }
+      if ((e.key === "o" || e.key === "O") && !meta) {
+        store.setSourceInOut("out", Math.max(store.sourceInSec + 0.5, store.sourceOutSec));
+        return;
+      }
+      if (e.key === "," && !meta) {
+        store.threePointInsert();
       }
     };
     window.addEventListener("keydown", onKey);

@@ -1,7 +1,10 @@
 //! Lumina media engine (Rust).
 //!
-//! Stage 0–2: compile-checked crate with decode request types and a CPU
-//! reference color-bars generator used by tests until FFmpeg/napi land.
+//! Decodes preview frames via the system `ffmpeg` CLI when available,
+//! falling back to a CPU color-bars generator.
+
+use std::io::Read;
+use std::process::{Command, Stdio};
 
 /// Engine semantic version exposed to the TypeScript host later via napi.
 pub fn engine_version() -> &'static str {
@@ -55,10 +58,66 @@ pub fn generate_color_bars(width: u32, height: u32, phase: u32) -> RgbaFrame {
     }
 }
 
-/// Dispatches a decode request. Stage 2 returns color bars; Stage 2.x swaps in FFmpeg.
+fn ticks_to_seconds(ticks: i128) -> f64 {
+    // Lumina ticks are 10_000_000 per second (100ns units).
+    (ticks as f64) / 10_000_000.0
+}
+
+/// Attempts an ffmpeg rawvideo RGBA decode at the requested timestamp.
+pub fn decode_frame_ffmpeg(req: &DecodeFrameRequest) -> Option<RgbaFrame> {
+    if req.media_path.starts_with("demo://") || req.media_path.is_empty() {
+        return None;
+    }
+    let w = req.output_width.max(1);
+    let h = req.output_height.max(1);
+    let t = ticks_to_seconds(req.source_ticks).max(0.0);
+    let scale = format!("{w}:{h}");
+    let output = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            &format!("{t:.3}"),
+            "-i",
+            &req.media_path,
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-vf",
+            &format!("scale={scale}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"),
+            "pipe:1",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut child = output;
+    let mut stdout = child.stdout.take()?;
+    let expected = (w as usize) * (h as usize) * 4;
+    let mut buf = Vec::with_capacity(expected);
+    stdout.read_to_end(&mut buf).ok()?;
+    let status = child.wait().ok()?;
+    if !status.success() || buf.len() < expected {
+        return None;
+    }
+    buf.truncate(expected);
+    Some(RgbaFrame {
+        width: w,
+        height: h,
+        pixels: buf,
+    })
+}
+
+/// Dispatches a decode request: ffmpeg CLI first, color bars fallback.
 pub fn decode_frame(req: &DecodeFrameRequest) -> RgbaFrame {
+    if let Some(frame) = decode_frame_ffmpeg(req) {
+        return frame;
+    }
     let phase = (req.source_ticks.abs() / 10_000_000) as u32;
-    let _ = &req.media_path;
     generate_color_bars(req.output_width.max(1), req.output_height.max(1), phase)
 }
 
@@ -87,5 +146,21 @@ mod tests {
             output_height: 18,
         });
         assert_eq!(frame.width, 32);
+    }
+
+    #[test]
+    fn ffmpeg_decode_demo_when_available() {
+        // Soft assertion: if ffmpeg or demo file missing, skip.
+        let demo = std::path::Path::new("apps/desktop/.lumina-cache/demo/demo-bars.mp4");
+        if !demo.exists() {
+            return;
+        }
+        let frame = decode_frame(&DecodeFrameRequest {
+            media_path: demo.display().to_string(),
+            source_ticks: 5_000_000,
+            output_width: 64,
+            output_height: 36,
+        });
+        assert_eq!(frame.pixels.len(), 64 * 36 * 4);
     }
 }

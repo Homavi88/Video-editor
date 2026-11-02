@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Real ffmpeg media pipeline in Vite: `/api/probe`, `/api/frame`, `/api/demo/ensure`, `/api/export`.
+- Program/Source monitors pull PNG frames for file-backed clips (fallback color bars).
+- Sequence export via ffmpeg filter_complex + dry-run; EDL / FCPXML / OTIO interchange.
+- Advanced edit commands: ripple trim, roll, slip, slide, speed, link, markers.
+- Mask model, CPU scopes (waveform/parade/histogram/vectorscope), audio DSP (EQ/comp/reverb).
+- Autosave snapshots + hotkey presets (Lumina/Premiere/FCP/Resolve).
+- `scripts/e2e-smoke.mjs` against running Vite server.
+- Path allowlist for media API; HW encoder detection; multi-track overlay export.
+- Proxy generation, filmstrip, peaks API; timeline waveforms; mask inspector preview.
+- Whisper CLI integration with demo fallback; electron-builder config + `package:desktop`.
+- Auto-place demo media on V1/A1; Insert/double-click from Media Pool; filmstrip thumbs on clips.
+- Soft mask feather/expansion applied in Program monitor; proxy path attached to media items.
+- Frame cache + prefetch for Program playback; ripple/roll/slip/slide gestures; Cross Dissolve → ffmpeg xfade.
+- Export queue actually runs jobs with progress; SlideEdit trims neighbors.
+- Continuous WebCodecs/HTMLVideo preview via `/api/stream`; Web Audio mixer with real VU/solo/fader.
+- GPU blend + mask shaders; clickable transition presets; Media Pool search/tags/auto-proxy 4K.
+- Nested sequence command; title overlay on Program; crash journal; electron-builder packaging scripts.
+- Live FX apply (blur/LGG/vignette) on Program; watch-folder scan/import; multicam stack + angle switch.
+- AAF-lite interchange; native engine ffmpeg CLI decode; persisted Edit layout column widths.
+
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.
 - `@lumina/core` domain model, command history, project.json, render-graph planner.

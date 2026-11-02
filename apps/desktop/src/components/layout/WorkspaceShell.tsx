@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useEditorStore } from "../../store/editor-store";
 import { MediaPool } from "../media/MediaPool";
 import { SourceMonitor } from "../monitors/SourceMonitor";
@@ -10,13 +11,59 @@ import { ExportPanel } from "../export/ExportPanel";
 import { ColorPanel } from "../effects/ColorPanel";
 import { TitlesPanel } from "../titles/TitlesPanel";
 
+const LAYOUT_KEY = "lumina.layout.prefs";
+
 export function WorkspaceShell() {
   const workspace = useEditorStore((s) => s.workspace);
+  const layoutPrefs = useEditorStore((s) => s.layoutPrefs);
+  const setLayoutPrefs = useEditorStore((s) => s.setLayoutPrefs);
+  const floatingInspector = useEditorStore((s) => s.floatingInspector);
+  const setFloatingInspector = useEditorStore((s) => s.setFloatingInspector);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        poolWidth?: number;
+        inspectorWidth?: number;
+        floatingInspector?: boolean;
+      };
+      setLayoutPrefs(parsed);
+      if (typeof parsed.floatingInspector === "boolean") {
+        setFloatingInspector(parsed.floatingInspector);
+      }
+    } catch {
+      // ignore
+    }
+  }, [setLayoutPrefs, setFloatingInspector]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LAYOUT_KEY,
+        JSON.stringify({ ...layoutPrefs, floatingInspector }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [layoutPrefs, floatingInspector]);
+
+  const floatingDock =
+    floatingInspector ? (
+      <aside
+        className="fixed right-3 top-14 z-40 w-[300px] max-h-[min(72vh,640px)] shadow-lg border border-line bg-panel/95 backdrop-blur-sm flex flex-col"
+        style={{ boxShadow: "0 12px 40px rgba(0,0,0,0.45)" }}
+      >
+        <Inspector />
+      </aside>
+    ) : null;
 
   if (workspace === "export") {
     return (
       <main className="flex-1 min-h-0 p-2">
         <ExportPanel />
+        {floatingDock}
       </main>
     );
   }
@@ -29,6 +76,7 @@ export function WorkspaceShell() {
           <MixerPanel />
         </div>
         <Timeline />
+        {floatingDock}
       </main>
     );
   }
@@ -41,6 +89,7 @@ export function WorkspaceShell() {
           <Timeline />
         </div>
         <ColorPanel />
+        {floatingDock}
       </main>
     );
   }
@@ -54,20 +103,58 @@ export function WorkspaceShell() {
           <Timeline />
         </div>
         <TitlesPanel />
+        {floatingDock}
       </main>
     );
   }
 
-  // Edit workspace — classic NLE
+  const pool = layoutPrefs.poolWidth;
+  const insp = layoutPrefs.inspectorWidth;
+
+  // Edit workspace — classic NLE with persisted column widths
   return (
     <main className="flex-1 min-h-0 grid grid-rows-[minmax(220px,38%)_1fr] gap-2 p-2">
-      <div className="grid grid-cols-[260px_1fr_1fr_280px] gap-2 min-h-0">
-        <MediaPool />
+      <div
+        className="grid gap-2 min-h-0"
+        style={{
+          gridTemplateColumns: floatingInspector
+            ? `${pool}px minmax(0,1fr) minmax(0,1fr) 260px`
+            : `${pool}px minmax(0,1fr) minmax(0,1fr) ${insp}px`,
+        }}
+      >
+        <div className="relative min-h-0 flex flex-col">
+          <MediaPool />
+          <input
+            aria-label="Pool width"
+            type="range"
+            min={200}
+            max={420}
+            value={pool}
+            className="absolute bottom-1 right-1 w-16 opacity-60"
+            onChange={(e) => setLayoutPrefs({ poolWidth: Number(e.target.value) })}
+          />
+        </div>
         <SourceMonitor />
         <ProgramMonitor />
-        <Inspector />
+        {floatingInspector ? (
+          <EffectsPanel />
+        ) : (
+          <div className="relative min-h-0 flex flex-col">
+            <Inspector />
+            <input
+              aria-label="Inspector width"
+              type="range"
+              min={220}
+              max={420}
+              value={insp}
+              className="absolute bottom-1 left-1 w-16 opacity-60"
+              onChange={(e) => setLayoutPrefs({ inspectorWidth: Number(e.target.value) })}
+            />
+          </div>
+        )}
       </div>
       <Timeline />
+      {floatingDock}
     </main>
   );
 }

@@ -242,7 +242,8 @@ export function buildFfmpegArgs(preset: ExportPreset, inputPath: string, outputP
   return args;
 }
 
-function mapVideoCodec(codec: VideoCodec): string {
+/** Maps domain video codec id → ffmpeg -c:v flag. */
+export function mapVideoCodec(codec: VideoCodec): string {
   switch (codec) {
     case "h264":
       return "libx264";
