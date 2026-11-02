@@ -127,6 +127,9 @@ export function ExportPanel() {
           <button type="button" className="lum-btn" onClick={() => exportInterchange("otio")}>
             OTIO
           </button>
+          <button type="button" className="lum-btn" onClick={() => exportInterchange("aaf")}>
+            AAF-lite
+          </button>
         </div>
         {interchangePreview && (
           <pre className="text-[10px] font-mono border border-line p-2 max-h-48 overflow-auto whitespace-pre-wrap">

@@ -8,6 +8,7 @@ declare global {
   interface Window {
     lumina?: {
       openMediaDialog: () => Promise<string[]>;
+      openFolderDialog?: () => Promise<string | null>;
       runFfmpeg: (args: string[]) => Promise<{ code: number; stderr: string }>;
       platform: string;
     };
@@ -27,8 +28,15 @@ export function MediaPool() {
   const attachProxyToMedia = useEditorStore((s) => s.attachProxyToMedia);
   const updateMediaTags = useEditorStore((s) => s.updateMediaTags);
   const nestSelectedAsSequence = useEditorStore((s) => s.nestSelectedAsSequence);
+  const buildMulticamFromPool = useEditorStore((s) => s.buildMulticamFromPool);
+  const switchMulticamAngle = useEditorStore((s) => s.switchMulticamAngle);
+  const multicamAngle = useEditorStore((s) => s.multicamAngle);
+  const addWatchFolder = useEditorStore((s) => s.addWatchFolder);
+  const watchFolders = useEditorStore((s) => s.watchFolders);
+  const importWatchFolder = useEditorStore((s) => s.importWatchFolder);
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "video" | "audio" | "image">("all");
+  const [watchPath, setWatchPath] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -91,7 +99,10 @@ export function MediaPool() {
     <section className="lum-panel flex flex-col min-h-0">
       <header className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-line text-sm">
         <span className="font-medium">{t(locale, "panel.media")}</span>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1 justify-end">
+          <button type="button" className="lum-btn" onClick={() => buildMulticamFromPool()}>
+            Multicam
+          </button>
           <button type="button" className="lum-btn" onClick={() => nestSelectedAsSequence()}>
             Nest
           </button>
@@ -108,6 +119,54 @@ export function MediaPool() {
           </button>
         </div>
       </header>
+      <div className="px-2 py-1 border-b border-line flex flex-wrap gap-1 items-center">
+        <input
+          className="flex-1 min-w-[120px] bg-transparent border border-line px-1.5 py-0.5 text-xs"
+          placeholder="Watch folder path…"
+          value={watchPath}
+          onChange={(e) => setWatchPath(e.target.value)}
+        />
+        <button
+          type="button"
+          className="lum-btn"
+          onClick={() => {
+            void (async () => {
+              const picked = window.lumina?.openFolderDialog
+                ? await window.lumina.openFolderDialog()
+                : null;
+              const dir = picked || watchPath.trim();
+              if (dir) {
+                setWatchPath(dir);
+                addWatchFolder(dir);
+              }
+            })();
+          }}
+        >
+          Watch
+        </button>
+        {watchFolders[0] ? (
+          <button
+            type="button"
+            className="lum-btn"
+            onClick={() => void importWatchFolder(watchFolders[0]!)}
+            title={watchFolders[0]}
+          >
+            Rescan
+          </button>
+        ) : null}
+        <div className="flex gap-0.5">
+          {[0, 1, 2].map((i) => (
+            <button
+              key={i}
+              type="button"
+              className={`lum-btn px-1.5 ${multicamAngle === i ? "border-accent text-accent" : ""}`}
+              onClick={() => switchMulticamAngle(i)}
+            >
+              A{i + 1}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="px-2 py-1 border-b border-line flex gap-1">
         <input
           className="flex-1 bg-transparent border border-line px-1.5 py-0.5 text-xs"

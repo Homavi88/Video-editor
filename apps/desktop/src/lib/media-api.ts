@@ -168,3 +168,10 @@ export function isFileBacked(path: string): boolean {
 export function mediaStreamUrl(filePath: string): string {
   return `/api/stream?path=${encodeURIComponent(filePath)}`;
 }
+
+export async function scanWatchFolder(dir: string): Promise<string[]> {
+  const res = await fetch(`/api/watch/scan?dir=${encodeURIComponent(dir)}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { files: string[] };
+  return data.files ?? [];
+}

@@ -73,6 +73,13 @@ ipcMain.handle("dialog:openMedia", async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
+ipcMain.handle("dialog:openFolder", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+
 ipcMain.handle("ffmpeg:run", async (_evt, args) => {
   return await new Promise((resolve) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });

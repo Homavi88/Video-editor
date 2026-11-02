@@ -155,6 +155,34 @@ export function luminaMediaApi(): Plugin {
             return;
           }
 
+          if (url.pathname === "/api/watch/scan") {
+            const dir = assertAllowedPath(need(url, "dir"), ROOTS);
+            if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+              return bad(res, "not a directory", 400);
+            }
+            const files: string[] = [];
+            const walk = (d: string, depth: number) => {
+              if (depth > 3) return;
+              for (const name of fs.readdirSync(d)) {
+                if (name.startsWith(".")) continue;
+                const full = path.join(d, name);
+                let st: fs.Stats;
+                try {
+                  st = fs.statSync(full);
+                } catch {
+                  continue;
+                }
+                if (st.isDirectory()) walk(full, depth + 1);
+                else if (/\.(mp4|mov|mkv|avi|webm|mxf|mp3|wav|aac|flac|m4a|png|jpe?g|webp|gif)$/i.test(name)) {
+                  files.push(full);
+                }
+              }
+            };
+            walk(dir, 0);
+            json(res, { dir, files: files.slice(0, 500) });
+            return;
+          }
+
           if (url.pathname === "/api/transcribe" && req.method === "POST") {
             const body = JSON.parse(await readBody(req)) as { path: string; language?: string };
             const filePath = assertAllowedPath(body.path, ROOTS);

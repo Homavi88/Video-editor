@@ -36,6 +36,13 @@ async function main() {
   if (stream.status !== 206 && stream.status !== 200) {
     throw new Error(`stream failed: ${stream.status}`);
   }
+  const demoDir = demo.video.replace(/[/\\][^/\\]+$/, "");
+  const watch = await fetch(`${base}/api/watch/scan?dir=${encodeURIComponent(demoDir)}`);
+  if (!watch.ok) throw new Error("watch scan failed");
+  const watchJson = await watch.json();
+  if (!Array.isArray(watchJson.files) || watchJson.files.length < 1) {
+    throw new Error("watch scan returned no files");
+  }
   console.log("e2e-smoke OK", {
     video: demo.video,
     pngBytes: buf.length,

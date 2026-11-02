@@ -16,6 +16,12 @@ import {
   SlipEditCommand,
   SlideEditCommand,
   ApplyTransitionCommand,
+  AddEffectCommand,
+  SetBlendModeCommand,
+  SwitchMulticamAngleCommand,
+  buildMulticamAngles,
+  placeMulticamAngles,
+  findMulticamStack,
   createProject,
   createClip,
   createMediaItem,
@@ -33,6 +39,8 @@ import {
   exportEdl,
   exportFcpxml,
   exportOtioJson,
+  exportAafLite,
+  classifyMediaKind,
   type Project,
   type MediaItem,
   type EditTool,
@@ -40,9 +48,10 @@ import {
   type ClipId,
   type HotkeyPresetId,
   type MediaKind,
+  type BlendMode,
 } from "@lumina/core";
 import type { Locale } from "@lumina/i18n";
-import { ensureDemoMedia, exportSequenceApi, probePath } from "../lib/media-api";
+import { ensureDemoMedia, exportSequenceApi, probePath, scanWatchFolder } from "../lib/media-api";
 
 export type WorkspaceId = "edit" | "color" | "audio" | "effects" | "export";
 export type ThemeMode = "dark" | "light";
@@ -83,6 +92,16 @@ export interface EditorState {
   attachProxyToMedia: (mediaId: string, proxyPath: string) => void;
   applyTransitionPreset: (presetId: string) => void;
   updateMediaTags: (mediaId: string, tags: readonly string[]) => void;
+  addEffectToSelected: (typeId: string) => void;
+  setSelectedBlendMode: (mode: BlendMode) => void;
+  buildMulticamFromPool: () => void;
+  switchMulticamAngle: (angleIndex: number) => void;
+  importWatchFolder: (dir: string) => Promise<void>;
+  watchFolders: string[];
+  addWatchFolder: (dir: string) => void;
+  layoutPrefs: { poolWidth: number; inspectorWidth: number };
+  setLayoutPrefs: (patch: Partial<{ poolWidth: number; inspectorWidth: number }>) => void;
+  multicamAngle: number;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -110,7 +129,7 @@ export interface EditorState {
   queueExport: (presetId: string, outputPath: string, patentAcknowledged: boolean) => void;
   processExportQueue: () => Promise<void>;
   runSequenceExport: (outputPath: string, dryRun?: boolean) => Promise<void>;
-  exportInterchange: (kind: "edl" | "fcpxml" | "otio") => void;
+  exportInterchange: (kind: "edl" | "fcpxml" | "otio" | "aaf") => void;
   maybeAutosave: () => void;
   tickPlayback: (dtSeconds: number) => void;
   rippleTrimSelected: (edge: "in" | "out", newEdgeTime: bigint) => void;
@@ -155,8 +174,121 @@ export const useEditorStore = create<EditorState>((set, get) => {
     trackGains: {},
     vuLevels: {},
     titleOverlay: null,
+    watchFolders: [],
+    layoutPrefs: { poolWidth: 260, inspectorWidth: 280 },
+    multicamAngle: 0,
 
     setLocale: (locale) => set({ locale }),
+    setLayoutPrefs: (patch) =>
+      set({ layoutPrefs: { ...get().layoutPrefs, ...patch } }),
+    addWatchFolder: (dir) => {
+      if (!dir) return;
+      const watchFolders = Array.from(new Set([...get().watchFolders, dir]));
+      set({ watchFolders, status: `Watching ${dir}` });
+      void get().importWatchFolder(dir);
+    },
+    importWatchFolder: async (dir) => {
+      const files = await scanWatchFolder(dir);
+      const existing = new Set(get().project.media.map((m) => m.path));
+      const items: MediaItem[] = [];
+      for (const p of files) {
+        if (existing.has(p)) continue;
+        const kind = classifyMediaKind(p) as MediaKind;
+        const probed = await probePath(p);
+        const durationStr = probed?.metadata.duration;
+        const duration =
+          typeof durationStr === "string" || typeof durationStr === "number"
+            ? BigInt(durationStr)
+            : secondsToTicks(kind === "image" ? 5 : 10);
+        const name = p.split(/[\\/]/).pop() || p;
+        items.push(
+          createMediaItem({
+            kind,
+            name,
+            path: p,
+            metadata: {
+              duration,
+              hasVideo: kind !== "audio",
+              hasAudio: kind !== "image",
+              ...(kind === "audio"
+                ? { audioChannels: 2, audioSampleRate: 48000 }
+                : {
+                    width: Number(probed?.metadata.width) || 1920,
+                    height: Number(probed?.metadata.height) || 1080,
+                    frameRate: FRAME_RATES.fps25,
+                  }),
+            },
+            tags: ["watched"],
+          }),
+        );
+      }
+      if (items.length) {
+        get().importMediaItems(items);
+        set({ status: `Watch-folder imported ${items.length} from ${dir}` });
+      } else {
+        set({ status: `Watch-folder: no new files in ${dir}` });
+      }
+    },
+    addEffectToSelected: (typeId) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) {
+        set({ status: "Select a clip to add effect" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        try {
+          history.push(new AddEffectCommand(track.id, selectedClipId, typeId));
+          set(bump(sync(history), revision, `FX ${typeId}`));
+        } catch (err) {
+          set({ status: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+    },
+    setSelectedBlendMode: (mode) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(new SetBlendModeCommand(track.id, selectedClipId, mode));
+        set(bump(sync(history), revision, `Blend ${mode}`));
+        return;
+      }
+    },
+    buildMulticamFromPool: () => {
+      const { project, playheadTicks } = get();
+      const angles = buildMulticamAngles(project.media);
+      if (angles.length < 2) {
+        set({ status: "Need ≥2 video clips in pool for multicam" });
+        return;
+      }
+      const duration = secondsToTicks(8);
+      const next = placeMulticamAngles(project, angles.slice(0, 3), playheadTicks, duration);
+      get().history.reset(next);
+      set({
+        project: next,
+        revision: get().revision + 1,
+        multicamAngle: 0,
+        status: `Multicam stack: ${Math.min(3, angles.length)} angles`,
+      });
+    },
+    switchMulticamAngle: (angleIndex) => {
+      const { history, project, revision } = get();
+      const sequence = requireActiveSequence(project);
+      const stack = findMulticamStack(sequence);
+      if (!stack) {
+        set({ status: "No multicam stack — use Multicam from Media Pool" });
+        return;
+      }
+      history.push(new SwitchMulticamAngleCommand(angleIndex, stack.trackIds));
+      set({
+        ...bump(sync(history), revision, `Angle ${angleIndex + 1}`),
+        multicamAngle: angleIndex,
+      });
+    },
     setPreviewMask: (mask) => set({ previewMask: mask }),
     setTrackGain: (trackId, gain) =>
       set({ trackGains: { ...get().trackGains, [trackId]: Math.min(2, Math.max(0, gain)) } }),
@@ -692,6 +824,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       let text = "";
       if (kind === "edl") text = exportEdl(sequence, project.media);
       else if (kind === "fcpxml") text = exportFcpxml(sequence, project.media, project.name);
+      else if (kind === "aaf") text = exportAafLite(sequence, project.media, project.name);
       else text = exportOtioJson(sequence, project.media);
       set({ interchangePreview: text, status: `Exported ${kind.toUpperCase()} to preview` });
     },

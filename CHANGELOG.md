@@ -24,6 +24,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Continuous WebCodecs/HTMLVideo preview via `/api/stream`; Web Audio mixer with real VU/solo/fader.
 - GPU blend + mask shaders; clickable transition presets; Media Pool search/tags/auto-proxy 4K.
 - Nested sequence command; title overlay on Program; crash journal; electron-builder packaging scripts.
+- Live FX apply (blur/LGG/vignette) on Program; watch-folder scan/import; multicam stack + angle switch.
+- AAF-lite interchange; native engine ffmpeg CLI decode; persisted Edit layout column widths.
 
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.

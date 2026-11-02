@@ -11,6 +11,7 @@ import { formatTimecode, useEditorStore } from "../../store/editor-store";
 import { isFileBacked, mediaStreamUrl } from "../../lib/media-api";
 import { getCachedFrame, prefetchFrames, quantizeTime } from "../../lib/frame-cache";
 import { ContinuousPreview } from "../../lib/webcodecs-preview";
+import { applyClipEffectsToRenderer } from "../../lib/apply-clip-effects";
 
 const PREVIEW_FPS = 12;
 
@@ -85,6 +86,7 @@ export function ProgramMonitor() {
           ? active.blendMode
           : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
         renderer.drawImageSource(source, 1, blend);
+        applyClipEffectsToRenderer(renderer, active.clip, playheadTicks);
         if (previewMask) {
           renderer.applyRectMask(
             previewMask.bounds,
@@ -102,7 +104,7 @@ export function ProgramMonitor() {
       preview.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, active?.mediaPath, active?.clipId, revision, previewMask]);
+  }, [playing, active?.mediaPath, active?.clipId, revision, previewMask, playheadTicks]);
 
   // Resync continuous decoder if it drifts from the timeline clock.
   useEffect(() => {
@@ -172,6 +174,7 @@ export function ProgramMonitor() {
         ? active.blendMode
         : "normal") as "normal" | "multiply" | "screen" | "overlay" | "add";
       renderer.drawImageSource(img, 1, blend);
+      if (active?.clip) applyClipEffectsToRenderer(renderer, active.clip, playheadTicks);
       if (previewMask) {
         renderer.applyRectMask(
           previewMask.bounds,
@@ -184,7 +187,7 @@ export function ProgramMonitor() {
     img.addEventListener("load", onLoad);
     if (img.complete) onLoad();
     return () => img.removeEventListener("load", onLoad);
-  }, [frameUrl, previewMask, playing, active?.blendMode]);
+  }, [frameUrl, previewMask, playing, active?.blendMode, active?.clip, playheadTicks]);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -230,6 +233,7 @@ function findActiveVideo(
   clipStartSec: number;
   clipInSec: number;
   speed: number;
+  clip: import("@lumina/core").Clip;
 } | null {
   const sequence = requireActiveSequence(project);
   for (const track of sequence.videoTracks) {
@@ -251,6 +255,7 @@ function findActiveVideo(
         clipStartSec: ticksToSeconds(clip.start),
         clipInSec: ticksToSeconds(clip.inPoint),
         speed: Math.abs(clip.speed) || 1,
+        clip,
       };
     }
   }

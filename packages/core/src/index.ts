@@ -24,4 +24,6 @@ export * from "./export/presets.js";
 export * from "./interchange/edl.js";
 export * from "./interchange/fcpxml.js";
 export * from "./interchange/otio.js";
+export * from "./interchange/aaf.js";
 export * from "./hotkeys/presets.js";
+export * from "./watch/watch-folder.js";

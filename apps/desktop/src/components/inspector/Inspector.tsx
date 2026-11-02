@@ -21,6 +21,7 @@ export function Inspector() {
   const addMarkerAtPlayhead = useEditorStore((s) => s.addMarkerAtPlayhead);
   const setPreviewMask = useEditorStore((s) => s.setPreviewMask);
   const attachProxyToMedia = useEditorStore((s) => s.attachProxyToMedia);
+  const setSelectedBlendMode = useEditorStore((s) => s.setSelectedBlendMode);
   const [mask, setMask] = useState<MaskShape>(() => createRectMask());
   const [proxyStatus, setProxyStatus] = useState<string>("");
   const sequence = requireActiveSequence(project);
@@ -59,7 +60,34 @@ export function Inspector() {
             <Field label="Start" value={`${ticksToSeconds(clip.clip.start).toFixed(2)}s`} />
             <Field label="Duration" value={`${ticksToSeconds(clip.clip.duration).toFixed(2)}s`} />
             <Field label="Speed" value={`${clip.clip.speed}x`} />
-            <Field label="Blend" value={clip.clip.blendMode} />
+            <label className="grid grid-cols-[88px_1fr] gap-2 items-center text-xs">
+              <span className="text-muted">Blend</span>
+              <select
+                className="bg-transparent border border-line px-1 py-0.5"
+                value={clip.clip.blendMode}
+                onChange={(e) =>
+                  setSelectedBlendMode(e.target.value as typeof clip.clip.blendMode)
+                }
+              >
+                {(
+                  [
+                    "normal",
+                    "multiply",
+                    "screen",
+                    "overlay",
+                    "add",
+                    "subtract",
+                    "difference",
+                    "hardLight",
+                    "softLight",
+                  ] as const
+                ).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="flex flex-wrap gap-1">
               <button
                 type="button"
