@@ -66,6 +66,17 @@ function applyOne(
       renderer.applyNoise(amount, Number(time) / 10_000_000);
       break;
     }
+    case "builtin.chromaticAberration": {
+      const offset = sampleEffectParam(fx.params.offset!, time, 4);
+      renderer.applyChromaticAberration(offset);
+      break;
+    }
+    case "builtin.glow": {
+      const intensity = sampleEffectParam(fx.params.intensity!, time, 50) / 50;
+      const threshold = sampleEffectParam(fx.params.threshold!, time, 70) / 100;
+      renderer.applyGlow(intensity, threshold);
+      break;
+    }
     case "builtin.color.lut": {
       // Intensity is applied by ProgramMonitor via activeLut; keep stack order marker.
       break;

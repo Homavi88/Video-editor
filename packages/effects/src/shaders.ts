@@ -284,6 +284,45 @@ void main() {
 }
 `;
 
+export const CHROMA_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_offset;
+uniform vec2 u_texel;
+out vec4 outColor;
+void main() {
+  float o = u_offset * u_texel.x * 20.0;
+  float r = texture(u_tex, v_uv + vec2(o, 0.0)).r;
+  float g = texture(u_tex, v_uv).g;
+  float b = texture(u_tex, v_uv - vec2(o, 0.0)).b;
+  float a = texture(u_tex, v_uv).a;
+  outColor = vec4(r, g, b, a);
+}
+`;
+
+export const GLOW_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_intensity;
+uniform float u_threshold;
+uniform vec2 u_texel;
+out vec4 outColor;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  vec3 blur =
+    texture(u_tex, v_uv + vec2(u_texel.x * 2.0, 0.0)).rgb +
+    texture(u_tex, v_uv - vec2(u_texel.x * 2.0, 0.0)).rgb +
+    texture(u_tex, v_uv + vec2(0.0, u_texel.y * 2.0)).rgb +
+    texture(u_tex, v_uv - vec2(0.0, u_texel.y * 2.0)).rgb;
+  blur *= 0.25;
+  float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float mask = smoothstep(u_threshold, 1.0, luma);
+  outColor = vec4(clamp(c.rgb + blur * u_intensity * mask, 0.0, 1.0), c.a);
+}
+`;
+
 export const TRANSITION_SHADERS: Record<string, string> = {
   crossDissolve: CROSSFADE_FRAG,
   crossfade: CROSSFADE_FRAG,
@@ -298,5 +337,7 @@ export const EFFECT_SHADERS: Record<string, string> = {
   "builtin.mosaic": MOSAIC_FRAG,
   "builtin.mirror": MIRROR_FRAG,
   "builtin.noise": NOISE_FRAG,
+  "builtin.chromaticAberration": CHROMA_FRAG,
+  "builtin.glow": GLOW_FRAG,
   blit: BLIT_FRAG,
 };

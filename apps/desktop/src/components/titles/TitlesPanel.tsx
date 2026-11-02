@@ -18,6 +18,9 @@ export function TitlesPanel() {
   const [sttStatus, setSttStatus] = useState("");
   const project = useEditorStore((s) => s.project);
   const setTitleOverlay = useEditorStore((s) => s.setTitleOverlay);
+  const importSrtText = useEditorStore((s) => s.importSrtText);
+  const exportSrtPreview = useEditorStore((s) => s.exportSrtPreview);
+  const subtitleCues = useEditorStore((s) => s.subtitleCues);
   const title = useMemo(() => {
     const doc = createTitle(text, "Hero Title");
     return { ...doc, animation: "typewriter" as const };
@@ -32,6 +35,7 @@ export function TitlesPanel() {
   }, []);
 
   const media = project.media.find((m) => isFileBacked(m.path) && m.metadata.hasAudio);
+  const srtBody = captions || demoCaptions;
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -101,10 +105,44 @@ export function TitlesPanel() {
         {sttStatus && <div className="text-[11px] text-muted">{sttStatus}</div>}
 
         <div className="text-xs whitespace-pre-wrap font-mono border border-line p-2 max-h-40 overflow-auto">
-          {captions || demoCaptions}
+          {srtBody}
         </div>
         <div className="text-[11px] text-muted">
-          Parsed cues: {parseSrt(captions || demoCaptions).length}
+          Parsed cues: {parseSrt(srtBody).length}
+          {subtitleCues.length ? ` · on timeline: ${subtitleCues.length}` : ""}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" className="lum-btn-primary" onClick={() => importSrtText(srtBody)}>
+            Place on subtitle track
+          </button>
+          <label className="lum-btn cursor-pointer">
+            Import SRT/VTT
+            <input
+              type="file"
+              accept=".srt,.vtt,text/plain"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                void file.text().then((t) => {
+                  setCaptions(t);
+                  importSrtText(t);
+                });
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="lum-btn"
+            onClick={() => {
+              const out = exportSrtPreview();
+              setCaptions(out);
+              void navigator.clipboard?.writeText(out);
+            }}
+          >
+            Export SRT
+          </button>
         </div>
       </div>
     </section>

@@ -67,6 +67,10 @@ export function ProgramMonitor() {
   const activeLut = useEditorStore((s) => s.activeLut);
   const lutStrength = useEditorStore((s) => s.lutStrength);
   const compareSplit = useEditorStore((s) => s.compareSplit);
+  const showSafeZones = useEditorStore((s) => s.showSafeZones);
+  const setShowSafeZones = useEditorStore((s) => s.setShowSafeZones);
+  const activeSubtitleText = useEditorStore((s) => s.activeSubtitleText);
+  const subtitleLine = activeSubtitleText();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
@@ -261,8 +265,15 @@ export function ProgramMonitor() {
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
-      <header className="flex items-center justify-between px-2 py-1.5 border-b border-line text-sm">
+      <header className="flex items-center justify-between px-2 py-1.5 border-b border-line text-sm gap-2">
         <span>{t(locale, "panel.program")}</span>
+        <button
+          type="button"
+          className={`lum-btn text-[10px] ${showSafeZones ? "border-accent text-accent" : ""}`}
+          onClick={() => setShowSafeZones(!showSafeZones)}
+        >
+          Safe
+        </button>
         <span className="font-mono text-xs text-accent2">
           {formatTimecode(playheadTicks, Math.round(fps))}
           {active ? ` · ${active.name}` : " · black"}
@@ -278,6 +289,14 @@ export function ProgramMonitor() {
             <div className="w-1/2 pl-2 pt-1">After</div>
           </div>
         ) : null}
+        {showSafeZones ? (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-[5%] border border-white/35" />
+            <div className="absolute inset-[10%] border border-white/55" />
+            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/20" />
+            <div className="absolute top-1/2 left-0 right-0 h-px bg-white/20" />
+          </div>
+        ) : null}
         {titleOverlay ? (
           <div className="absolute inset-x-0 bottom-[18%] text-center pointer-events-none">
             <div
@@ -289,6 +308,20 @@ export function ProgramMonitor() {
               }}
             >
               {titleOverlay}
+            </div>
+          </div>
+        ) : null}
+        {subtitleLine ? (
+          <div className="absolute inset-x-0 bottom-[8%] text-center pointer-events-none px-6">
+            <div
+              className="inline-block max-w-[90%] px-3 py-1 text-sm"
+              style={{
+                color: "#fff",
+                background: "rgba(0,0,0,0.65)",
+                textShadow: "0 1px 2px rgba(0,0,0,0.9)",
+              }}
+            >
+              {subtitleLine}
             </div>
           </div>
         ) : null}

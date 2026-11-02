@@ -7,3 +7,4 @@ export * from "./multicam.js";
 export * from "./track-commands.js";
 export * from "./attribute-commands.js";
 export * from "./param-commands.js";
+export * from "./subtitle-commands.js";

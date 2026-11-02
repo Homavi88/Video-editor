@@ -12,6 +12,8 @@ const LIVE_FX = new Set([
   "builtin.mosaic",
   "builtin.mirror",
   "builtin.noise",
+  "builtin.chromaticAberration",
+  "builtin.glow",
 ]);
 
 export function EffectsPanel() {

@@ -52,6 +52,12 @@ import {
   classifyMediaKind,
   createWarmDemoLut,
   parseCubeLut,
+  parseSrt,
+  serializeSrt,
+  ImportSubtitleCuesCommand,
+  ReplaceClipMediaCommand,
+  LinkClipsCommand,
+  cuesAtTime,
   type Project,
   type MediaItem,
   type EditTool,
@@ -63,6 +69,7 @@ import {
   type ClipAttributes,
   type Lut3D,
   type TrackKind,
+  type SubtitleCue,
 } from "@lumina/core";
 import type { Locale } from "@lumina/i18n";
 import { ensureDemoMedia, exportSequenceApi, probePath, scanWatchFolder } from "../lib/media-api";
@@ -144,6 +151,15 @@ export interface EditorState {
   zoomToPlayhead: () => void;
   compareSplit: boolean;
   setCompareSplit: (v: boolean) => void;
+  showSafeZones: boolean;
+  setShowSafeZones: (v: boolean) => void;
+  subtitleCues: SubtitleCue[];
+  importSrtText: (text: string) => void;
+  exportSrtPreview: () => string;
+  activeSubtitleText: () => string | null;
+  replaceSelectedWithMedia: () => void;
+  linkSelectedAv: () => void;
+  unlinkSelected: () => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -227,8 +243,114 @@ export const useEditorStore = create<EditorState>((set, get) => {
     floatingInspector: false,
     transitionDurationSec: 1,
     compareSplit: false,
+    showSafeZones: false,
+    subtitleCues: [],
 
     setLocale: (locale) => set({ locale }),
+    setShowSafeZones: (v) => set({ showSafeZones: v }),
+    importSrtText: (text) => {
+      try {
+        const cues = parseSrt(text);
+        const { history, revision } = get();
+        history.push(new ImportSubtitleCuesCommand(cues));
+        set({
+          ...bump(sync(history), revision, `Imported ${cues.length} cues`),
+          subtitleCues: cues,
+        });
+      } catch (err) {
+        set({ status: err instanceof Error ? err.message : String(err) });
+      }
+    },
+    exportSrtPreview: () => {
+      const cues = get().subtitleCues;
+      if (cues.length) return serializeSrt(cues);
+      // Fall back to subtitle track clip names as cues.
+      const sequence = requireActiveSequence(get().project);
+      const rebuilt: SubtitleCue[] = sequence.subtitleTracks.flatMap((tr) =>
+        tr.clips.map((c) => ({
+          id: c.id as unknown as SubtitleCue["id"],
+          start: c.start,
+          end: clipEnd(c),
+          text: c.name,
+        })),
+      );
+      return serializeSrt(rebuilt);
+    },
+    activeSubtitleText: () => {
+      const { subtitleCues, playheadTicks, project } = get();
+      if (subtitleCues.length) {
+        const texts = cuesAtTime(subtitleCues, playheadTicks);
+        return texts[0] ?? null;
+      }
+      const sequence = requireActiveSequence(project);
+      for (const tr of sequence.subtitleTracks) {
+        if (tr.hidden || tr.muted) continue;
+        for (const c of tr.clips) {
+          if (playheadTicks >= c.start && playheadTicks < clipEnd(c)) return c.name;
+        }
+      }
+      return null;
+    },
+    replaceSelectedWithMedia: () => {
+      const { history, project, selectedClipId, selectedMediaId, revision } = get();
+      if (!selectedClipId || !selectedMediaId) {
+        set({ status: "Select clip + media to replace" });
+        return;
+      }
+      const media = project.media.find((m) => m.id === selectedMediaId);
+      if (!media) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(
+          new ReplaceClipMediaCommand(track.id, selectedClipId, media.id, media.name),
+        );
+        set(bump(sync(history), revision, `Replaced with ${media.name}`));
+        return;
+      }
+    },
+    linkSelectedAv: () => {
+      const { history, project, selectedClipId, playheadTicks, revision } = get();
+      if (!selectedClipId) {
+        set({ status: "Select a clip to link A/V" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      const all = [...sequence.videoTracks, ...sequence.audioTracks].flatMap((tr) =>
+        tr.clips.map((c) => ({ clip: c, track: tr })),
+      );
+      const selected = all.find((x) => x.clip.id === selectedClipId);
+      if (!selected) return;
+      // Link clips that overlap the selected clip (or playhead) across V/A.
+      const start = selected.clip.start;
+      const end = clipEnd(selected.clip);
+      const group = all
+        .filter(
+          (x) =>
+            x.clip.id === selectedClipId ||
+            (x.clip.start < end && clipEnd(x.clip) > start) ||
+            (playheadTicks >= x.clip.start && playheadTicks < clipEnd(x.clip)),
+        )
+        .map((x) => x.clip.id);
+      if (group.length < 2) {
+        set({ status: "Need overlapping V+A clips to link" });
+        return;
+      }
+      history.push(new LinkClipsCommand(group, true));
+      set(bump(sync(history), revision, `Linked ${group.length} clips`));
+    },
+    unlinkSelected: () => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      const clip = [...sequence.videoTracks, ...sequence.audioTracks]
+        .flatMap((t) => t.clips)
+        .find((c) => c.id === selectedClipId);
+      if (!clip) return;
+      const ids = [clip.id, ...clip.linkedClipIds];
+      history.push(new LinkClipsCommand(ids, false));
+      set(bump(sync(history), revision, "Unlinked"));
+    },
     setActiveLut: (lut) => set({ activeLut: lut }),
     setLutStrength: (v) => set({ lutStrength: Math.min(1, Math.max(0, v)) }),
     loadDemoLut: () => set({ activeLut: createWarmDemoLut(17), status: "Loaded warm demo LUT" }),

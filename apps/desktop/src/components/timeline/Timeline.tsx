@@ -40,11 +40,14 @@ export function Timeline() {
   const setSequenceInOut = useEditorStore((s) => s.setSequenceInOut);
   const zoomToFit = useEditorStore((s) => s.zoomToFit);
   const zoomToPlayhead = useEditorStore((s) => s.zoomToPlayhead);
+  const linkSelectedAv = useEditorStore((s) => s.linkSelectedAv);
+  const unlinkSelected = useEditorStore((s) => s.unlinkSelected);
+  const replaceSelectedWithMedia = useEditorStore((s) => s.replaceSelectedWithMedia);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
-    () => [...sequence.videoTracks, ...sequence.audioTracks],
-    [sequence.audioTracks, sequence.videoTracks],
+    () => [...sequence.videoTracks, ...sequence.subtitleTracks, ...sequence.audioTracks],
+    [sequence.audioTracks, sequence.subtitleTracks, sequence.videoTracks],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -110,8 +113,20 @@ export function Timeline() {
         <button type="button" className="lum-btn" onClick={() => addTrack("audio")}>
           +A
         </button>
+        <button type="button" className="lum-btn" onClick={() => addTrack("subtitle")}>
+          +S
+        </button>
         <button type="button" className="lum-btn" onClick={() => placeAdjustmentLayer()}>
           ADJ
+        </button>
+        <button type="button" className="lum-btn" onClick={() => linkSelectedAv()}>
+          Link
+        </button>
+        <button type="button" className="lum-btn" onClick={() => unlinkSelected()}>
+          Unlink
+        </button>
+        <button type="button" className="lum-btn" onClick={() => replaceSelectedWithMedia()}>
+          Replace
         </button>
         <button
           type="button"
@@ -239,9 +254,11 @@ export function Timeline() {
                       className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden border ${
                         track.kind === "audio"
                           ? "bg-audio/70 border-audio"
-                          : track.kind === "adjustment"
-                            ? "bg-accent/30 border-accent"
-                            : "bg-clip/70 border-clip"
+                          : track.kind === "subtitle"
+                            ? "bg-accent2/25 border-accent2"
+                            : track.kind === "adjustment"
+                              ? "bg-accent/30 border-accent"
+                              : "bg-clip/70 border-clip"
                       } ${selected ? "ring-2 ring-accent2" : ""} ${
                         tool === "select" ? "cursor-grab" : "cursor-ew-resize"
                       }`}

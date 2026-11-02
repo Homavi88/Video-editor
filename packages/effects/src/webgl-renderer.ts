@@ -13,6 +13,8 @@ import {
   GAUSSIAN_BLUR_FRAG,
   LUT3D_FRAG,
   MASK_FRAG,
+  CHROMA_FRAG,
+  GLOW_FRAG,
   MIRROR_FRAG,
   MOSAIC_FRAG,
   NOISE_FRAG,
@@ -44,6 +46,8 @@ export class WebGLPreviewRenderer {
   private readonly mosaic: Program;
   private readonly mirror: Program;
   private readonly noise: Program;
+  private readonly chroma: Program;
+  private readonly glow: Program;
   private readonly quad: WebGLBuffer;
   private readonly texture: WebGLTexture;
   private lutTexture: WebGLTexture | null = null;
@@ -73,6 +77,8 @@ export class WebGLPreviewRenderer {
     this.mosaic = createProgram(gl, FULLSCREEN_VERT, MOSAIC_FRAG);
     this.mirror = createProgram(gl, FULLSCREEN_VERT, MIRROR_FRAG);
     this.noise = createProgram(gl, FULLSCREEN_VERT, NOISE_FRAG);
+    this.chroma = createProgram(gl, FULLSCREEN_VERT, CHROMA_FRAG);
+    this.glow = createProgram(gl, FULLSCREEN_VERT, GLOW_FRAG);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -236,6 +242,23 @@ export class WebGLPreviewRenderer {
     });
   }
 
+  applyChromaticAberration(offset: number): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.chroma, (p) => {
+      gl.uniform1f(p.uniforms.u_offset!, Math.max(0, offset));
+      gl.uniform2f(p.uniforms.u_texel!, 1 / this.width, 1 / this.height);
+    });
+  }
+
+  applyGlow(intensity: number, threshold: number): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.glow, (p) => {
+      gl.uniform1f(p.uniforms.u_intensity!, Math.max(0, intensity));
+      gl.uniform1f(p.uniforms.u_threshold!, Math.min(1, Math.max(0, threshold)));
+      gl.uniform2f(p.uniforms.u_texel!, 1 / this.width, 1 / this.height);
+    });
+  }
+
   /** Draws SMPTE-like color bars procedurally into a texture then blits. */
   drawColorBars(timeSeconds = 0): void {
     const w = 128;
@@ -375,6 +398,9 @@ function createProgram(gl: WebGL2RenderingContext, vertSrc: string, fragSrc: str
       u_split: gl.getUniformLocation(program, "u_split"),
       u_block: gl.getUniformLocation(program, "u_block"),
       u_axis: gl.getUniformLocation(program, "u_axis"),
+      u_offset: gl.getUniformLocation(program, "u_offset"),
+      u_intensity: gl.getUniformLocation(program, "u_intensity"),
+      u_threshold: gl.getUniformLocation(program, "u_threshold"),
     },
   };
 }
