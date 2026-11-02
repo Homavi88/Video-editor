@@ -70,7 +70,29 @@ export function ProgramMonitor() {
   const showSafeZones = useEditorStore((s) => s.showSafeZones);
   const setShowSafeZones = useEditorStore((s) => s.setShowSafeZones);
   const activeSubtitleText = useEditorStore((s) => s.activeSubtitleText);
+  const setPreviewScopeRgba = useEditorStore((s) => s.setPreviewScopeRgba);
   const subtitleLine = activeSubtitleText();
+  const lastScopePushRef = useRef(0);
+
+  const pushScopeSample = (canvas: HTMLCanvasElement) => {
+    const now = performance.now();
+    if (now - lastScopePushRef.current < 120) return;
+    lastScopePushRef.current = now;
+    try {
+      const w = 96;
+      const h = 54;
+      const off = document.createElement("canvas");
+      off.width = w;
+      off.height = h;
+      const ctx = off.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(canvas, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      setPreviewScopeRgba({ width: w, height: h, data: new Uint8Array(img.data) });
+    } catch {
+      // WebGL canvas may be tainted in edge cases — ignore.
+    }
+  };
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
@@ -146,6 +168,7 @@ export function ProgramMonitor() {
           lutUploadedRef,
           compareSplit,
         });
+        if (canvas) pushScopeSample(canvas);
         if (source instanceof ImageBitmap) source.close();
       });
     })();
@@ -246,6 +269,7 @@ export function ProgramMonitor() {
         lutUploadedRef,
         compareSplit,
       });
+      pushScopeSample(canvas);
     };
     img.addEventListener("load", onLoad);
     if (img.complete) onLoad();

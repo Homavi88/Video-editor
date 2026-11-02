@@ -57,7 +57,12 @@ export class WebGLPreviewRenderer {
   readonly stats: RendererStats = { frames: 0, lastMs: 0 };
 
   constructor(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { antialias: false, alpha: true, premultipliedAlpha: false });
+    const gl = canvas.getContext("webgl2", {
+      antialias: false,
+      alpha: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true,
+    });
     if (!gl) throw new Error("WebGL2 unavailable");
     this.gl = gl;
     this.width = canvas.width;

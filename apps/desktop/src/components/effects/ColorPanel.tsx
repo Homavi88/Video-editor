@@ -25,6 +25,7 @@ export function ColorPanel() {
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const compareSplit = useEditorStore((s) => s.compareSplit);
   const setCompareSplit = useEditorStore((s) => s.setCompareSplit);
+  const previewScopeRgba = useEditorStore((s) => s.previewScopeRgba);
 
   const preview = useMemo(() => {
     const lgg = {
@@ -39,6 +40,14 @@ export function ColorPanel() {
   }, [exposure, gain, gamma, lift, sat]);
 
   const hist = useMemo(() => {
+    if (previewScopeRgba) {
+      return computeScopes(
+        previewScopeRgba.data,
+        previewScopeRgba.width,
+        previewScopeRgba.height,
+        64,
+      );
+    }
     const rgba = new Uint8Array(64 * 36 * 4);
     for (let i = 0; i < rgba.length; i += 4) {
       rgba[i] = Math.round(preview.r * 255);
@@ -47,7 +56,7 @@ export function ColorPanel() {
       rgba[i + 3] = 255;
     }
     return computeScopes(rgba, 64, 36, 64);
-  }, [preview]);
+  }, [preview, previewScopeRgba]);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
@@ -127,7 +136,8 @@ export function ColorPanel() {
 
         <div className="text-xs text-muted">
           Histogram peak bin:{" "}
-          {hist.histogram.indexOf(Math.max(...hist.histogram))} · Status: {status}
+          {hist.histogram.indexOf(Math.max(...hist.histogram))} ·{" "}
+          {previewScopeRgba ? "live Program" : "swatch"} · Status: {status}
         </div>
         <canvas
           width={128}
@@ -143,6 +153,31 @@ export function ColorPanel() {
             for (let i = 0; i < 256; i += 2) {
               const h = (hist.histogram[i]! / max) * 48;
               ctx.fillRect(i / 2, 48 - h, 1, h);
+            }
+          }}
+        />
+        <canvas
+          width={128}
+          height={64}
+          className="w-full border border-line bg-black/40"
+          title="Waveform"
+          ref={(canvas) => {
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.clearRect(0, 0, 128, 64);
+            ctx.fillStyle = "#7dd3a0";
+            const w = hist.width;
+            const h = hist.height;
+            for (let x = 0; x < Math.min(128, w); x += 1) {
+              let top = h;
+              for (let y = 0; y < h; y += 1) {
+                if (hist.waveform[y * w + x]) {
+                  top = y;
+                  break;
+                }
+              }
+              ctx.fillRect(x, (top / h) * 64, 1, 64 - (top / h) * 64);
             }
           }}
         />

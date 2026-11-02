@@ -70,9 +70,20 @@ import {
   type Lut3D,
   type TrackKind,
   type SubtitleCue,
+  type VolumePoint,
+  sampleVolume,
+  frameDurationTicks,
 } from "@lumina/core";
+import { detectScenesFromLuma } from "@lumina/ai";
 import type { Locale } from "@lumina/i18n";
-import { ensureDemoMedia, exportSequenceApi, probePath, scanWatchFolder } from "../lib/media-api";
+import {
+  ensureDemoMedia,
+  exportSequenceApi,
+  fetchFrameObjectUrl,
+  isFileBacked,
+  probePath,
+  scanWatchFolder,
+} from "../lib/media-api";
 
 export type WorkspaceId = "edit" | "color" | "audio" | "effects" | "export";
 export type ThemeMode = "dark" | "light";
@@ -160,6 +171,12 @@ export interface EditorState {
   replaceSelectedWithMedia: () => void;
   linkSelectedAv: () => void;
   unlinkSelected: () => void;
+  previewScopeRgba: { width: number; height: number; data: Uint8Array } | null;
+  setPreviewScopeRgba: (frame: { width: number; height: number; data: Uint8Array } | null) => void;
+  clipVolumePoints: Record<string, VolumePoint[]>;
+  setClipVolumePoint: (clipId: string, time: bigint, gain: number) => void;
+  sampleClipGain: (clipId: string, time: bigint) => number;
+  detectScenesOnSelected: () => Promise<void>;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -245,9 +262,64 @@ export const useEditorStore = create<EditorState>((set, get) => {
     compareSplit: false,
     showSafeZones: false,
     subtitleCues: [],
+    previewScopeRgba: null,
+    clipVolumePoints: {},
 
     setLocale: (locale) => set({ locale }),
     setShowSafeZones: (v) => set({ showSafeZones: v }),
+    setPreviewScopeRgba: (frame) => set({ previewScopeRgba: frame }),
+    setClipVolumePoint: (clipId, time, gain) => {
+      const prev = get().clipVolumePoints[clipId] ?? [{ time: 0n, gain: 1 }];
+      const next = [...prev.filter((p) => p.time !== time), { time, gain: Math.max(0, gain) }].sort(
+        (a, b) => (a.time < b.time ? -1 : 1),
+      );
+      set({
+        clipVolumePoints: { ...get().clipVolumePoints, [clipId]: next },
+        status: `Volume KF @ ${ticksToSeconds(time).toFixed(2)}s`,
+      });
+    },
+    sampleClipGain: (clipId, time) => {
+      const pts = get().clipVolumePoints[clipId];
+      if (!pts?.length) return 1;
+      return sampleVolume(
+        pts.map((p) => ({
+          id: `vk-${String(p.time)}` as never,
+          time: p.time,
+          value: p.gain,
+          interpolation: "linear" as const,
+        })),
+        time,
+      );
+    },
+    detectScenesOnSelected: async () => {
+      const { selectedMediaId, project, history } = get();
+      const media = project.media.find((m) => m.id === selectedMediaId);
+      if (!media || !isFileBacked(media.path) || media.kind === "audio") {
+        set({ status: "Select a video media item for scene detect" });
+        return;
+      }
+      set({ status: "Detecting scenes…" });
+      const duration = Math.min(12, Math.max(2, ticksToSeconds(media.metadata.duration) || 8));
+      const step = 0.25;
+      const lumas: number[] = [];
+      for (let t = 0; t < duration; t += step) {
+        const url = await fetchFrameObjectUrl(media.path, t, 160, 90);
+        if (!url) {
+          lumas.push(lumas[lumas.length - 1] ?? 0.2);
+          continue;
+        }
+        const luma = await averageLumaFromUrl(url);
+        URL.revokeObjectURL(url);
+        lumas.push(luma);
+      }
+      const cuts = detectScenesFromLuma(lumas, frameDurationTicks(FRAME_RATES.fps25) * 6n, 0.18);
+      for (const cut of cuts.slice(0, 24)) {
+        history.push(new AddMarkerCommand(cut.time, `Scene ${cut.score.toFixed(2)}`, "orange"));
+      }
+      set({
+        ...bump(sync(history), get().revision, `Scene detect: ${cuts.length} cuts → markers`),
+      });
+    },
     importSrtText: (text) => {
       try {
         const cues = parseSrt(text);
@@ -1198,4 +1270,29 @@ export function formatTimecode(ticks: bigint, fps = 25): string {
   const h = Math.floor(totalMin / 60);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(h)}:${pad(m)}:${pad(s)}:${pad(f)}`;
+}
+
+async function averageLumaFromUrl(url: string): Promise<number> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = 80;
+      c.height = 45;
+      const ctx = c.getContext("2d");
+      if (!ctx) {
+        resolve(0.2);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, 80, 45);
+      const data = ctx.getImageData(0, 0, 80, 45).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += (0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!) / 255;
+      }
+      resolve(sum / (data.length / 4));
+    };
+    img.onerror = () => resolve(0.2);
+    img.src = url;
+  });
 }

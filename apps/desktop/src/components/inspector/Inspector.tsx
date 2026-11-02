@@ -33,6 +33,8 @@ export function Inspector() {
   const addEffectKeyframeAtPlayhead = useEditorStore((s) => s.addEffectKeyframeAtPlayhead);
   const setEffectEnabled = useEditorStore((s) => s.setEffectEnabled);
   const playheadTicks = useEditorStore((s) => s.playheadTicks);
+  const setClipVolumePoint = useEditorStore((s) => s.setClipVolumePoint);
+  const sampleClipGain = useEditorStore((s) => s.sampleClipGain);
   const [mask, setMask] = useState<MaskShape>(() => createRectMask());
   const [proxyStatus, setProxyStatus] = useState<string>("");
   const sequence = requireActiveSequence(project);
@@ -145,6 +147,32 @@ export function Inspector() {
                 Paste attrs
               </button>
             </div>
+
+            {clip.clip.kind === "audio" ? (
+              <div className="space-y-1 pt-1">
+                <div className="text-muted text-xs uppercase tracking-wide">Volume rubber-band</div>
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  Gain
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    value={Math.round(
+                      sampleClipGain(clip.clip.id, playheadTicks - clip.clip.start) * 100,
+                    )}
+                    onChange={(e) =>
+                      setClipVolumePoint(
+                        clip.clip.id,
+                        playheadTicks - clip.clip.start < 0n
+                          ? 0n
+                          : playheadTicks - clip.clip.start,
+                        Number(e.target.value) / 100,
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
 
             <div className="text-muted text-xs uppercase tracking-wide pt-2">Mask</div>
             <div className="flex gap-1">

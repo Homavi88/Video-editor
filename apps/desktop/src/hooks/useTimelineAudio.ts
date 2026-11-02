@@ -29,7 +29,7 @@ export function useTimelineAudio(): void {
     let raf = 0;
     const pump = () => {
       const store = useEditorStore.getState();
-      const { playing, playheadTicks, project, trackGains, setVuLevels } = store;
+      const { playing, playheadTicks, project, trackGains, setVuLevels, sampleClipGain } = store;
       const sequence = requireActiveSequence(project);
       const anySolo = sequence.audioTracks.some((t) => t.solo);
       const levels: Record<string, number> = {};
@@ -51,17 +51,19 @@ export function useTimelineAudio(): void {
           levels[track.id] = 0;
         }
 
-        const gainNode = gainsRef.current.get(track.id);
-        if (gainNode) {
-          const userGain = trackGains[track.id] ?? 1;
-          const silent = track.muted || (anySolo && !track.solo) || !playing;
-          gainNode.gain.value = silent ? 0 : userGain;
-        }
-
         // Keep at most one active clip element per track synced to playhead.
         const clip = track.clips.find(
           (c) => c.enabled && playheadTicks >= c.start && playheadTicks < clipEnd(c),
         );
+
+        const gainNode = gainsRef.current.get(track.id);
+        if (gainNode) {
+          const userGain = trackGains[track.id] ?? 1;
+          const clipGain = clip ? sampleClipGain(clip.id, playheadTicks - clip.start) : 1;
+          const silent = track.muted || (anySolo && !track.solo) || !playing;
+          gainNode.gain.value = silent ? 0 : userGain * clipGain;
+        }
+
         if (!clip || clip.source.type !== "media") {
           const el = elementsRef.current.get(track.id);
           if (el && !el.paused) el.pause();

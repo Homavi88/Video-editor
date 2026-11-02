@@ -34,6 +34,7 @@ export function MediaPool() {
   const addWatchFolder = useEditorStore((s) => s.addWatchFolder);
   const watchFolders = useEditorStore((s) => s.watchFolders);
   const importWatchFolder = useEditorStore((s) => s.importWatchFolder);
+  const detectScenesOnSelected = useEditorStore((s) => s.detectScenesOnSelected);
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "video" | "audio" | "image">("all");
   const [watchPath, setWatchPath] = useState("");
@@ -105,6 +106,15 @@ export function MediaPool() {
           </button>
           <button type="button" className="lum-btn" onClick={() => nestSelectedAsSequence()}>
             Nest
+          </button>
+          <button
+            type="button"
+            className="lum-btn"
+            disabled={!selectedMediaId}
+            onClick={() => void detectScenesOnSelected()}
+            title="Scene detect → markers"
+          >
+            Scenes
           </button>
           <button
             type="button"
