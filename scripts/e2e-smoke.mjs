@@ -19,7 +19,22 @@ async function main() {
   if (!frame.ok) throw new Error("frame failed");
   const buf = Buffer.from(await frame.arrayBuffer());
   if (buf.length < 100 || buf[0] !== 0x89) throw new Error("frame is not PNG");
-  console.log("e2e-smoke OK", { video: demo.video, pngBytes: buf.length });
+
+  const enc = await fetch(`${base}/api/encoders`);
+  if (!enc.ok) throw new Error("encoders failed");
+  const peaks = await fetch(
+    `${base}/api/peaks?path=${encodeURIComponent(demo.audio)}&buckets=64`,
+  );
+  if (!peaks.ok) throw new Error("peaks failed");
+  const denied = await fetch(`${base}/api/probe?path=${encodeURIComponent("/etc/passwd")}`);
+  if (denied.status !== 500 && denied.status !== 400) {
+    throw new Error("path guard should reject /etc/passwd");
+  }
+  console.log("e2e-smoke OK", {
+    video: demo.video,
+    pngBytes: buf.length,
+    encoders: (await enc.json()).encoders?.length,
+  });
 }
 
 main().catch((err) => {

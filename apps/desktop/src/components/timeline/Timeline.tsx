@@ -7,6 +7,7 @@ import {
   clipEnd,
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
+import { Waveform } from "./Waveform";
 
 export function Timeline() {
   const locale = useEditorStore((s) => s.locale);
@@ -143,6 +144,11 @@ export function Timeline() {
                   const left = ticksToSeconds(clip.start) * pxPerSecond;
                   const width = Math.max(4, ticksToSeconds(clip.duration) * pxPerSecond);
                   const selected = clip.id === selectedClipId;
+                  const source = clip.source;
+                  const mediaPath =
+                    source.type === "media"
+                      ? project.media.find((m) => m.id === source.mediaId)?.path
+                      : undefined;
                   return (
                     <div
                       key={clip.id}
@@ -177,7 +183,10 @@ export function Timeline() {
                         window.addEventListener("pointerup", onUp);
                       }}
                     >
-                      <div className="truncate font-medium">{clip.name}</div>
+                      {track.kind === "audio" && mediaPath ? (
+                        <Waveform mediaPath={mediaPath} width={width} height={track.height - 8} />
+                      ) : null}
+                      <div className="truncate font-medium relative z-10">{clip.name}</div>
                     </div>
                   );
                 })}

@@ -370,12 +370,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
     runSequenceExport: async (outputPath, dryRun = false) => {
       const { project } = get();
       const sequence = requireActiveSequence(project);
+      const activeVideoTracks = sequence.videoTracks.filter(
+        (t) => !t.muted && !t.hidden && t.clips.some((c) => c.enabled),
+      ).length;
+      const mode = activeVideoTracks > 1 ? "overlay" : "concat";
       set({ status: dryRun ? "Building export graph…" : "Exporting sequence…" });
       const result = await exportSequenceApi({
         sequence,
         media: project.media,
         outputPath,
         dryRun,
+        mode,
       });
       if (!result.ok) {
         set({ status: result.error ?? "Export failed" });
@@ -383,8 +388,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
       set({
         status: dryRun
-          ? `Export dry-run: ${result.description ?? "ok"}`
-          : `Exported → ${outputPath}`,
+          ? `Export dry-run (${result.encoder ?? mode}): ${result.description ?? "ok"}`
+          : `Exported [${result.encoder ?? "libx264"}] → ${outputPath}`,
       });
     },
 

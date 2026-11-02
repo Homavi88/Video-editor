@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EXPORT_PRESETS } from "@lumina/core";
 import { t } from "@lumina/i18n";
 import { useEditorStore } from "../../store/editor-store";
+import { listEncoders } from "../../lib/media-api";
 
 export function ExportPanel() {
   const locale = useEditorStore((s) => s.locale);
@@ -13,7 +14,15 @@ export function ExportPanel() {
   const status = useEditorStore((s) => s.status);
   const [presetId, setPresetId] = useState("webm-av1");
   const [patentOk, setPatentOk] = useState(false);
+  const [encoders, setEncoders] = useState<
+    Array<{ id: string; label: string; available: boolean; videoCodecFlag: string }>
+  >([]);
   const preset = EXPORT_PRESETS.find((p) => p.id === presetId);
+
+  useEffect(() => {
+    void listEncoders().then(setEncoders);
+  }, []);
+
 
   return (
     <section className="lum-panel h-full grid grid-cols-[1fr_1fr] min-h-0">
@@ -68,6 +77,15 @@ export function ExportPanel() {
                 <span>{t(locale, "patent.warning")}</span>
               </label>
             )}
+            <div className="text-xs text-muted">
+              Encoders:{" "}
+              {encoders.length === 0
+                ? "…"
+                : encoders
+                    .filter((e) => e.available)
+                    .map((e) => e.label)
+                    .join(" · ")}
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"

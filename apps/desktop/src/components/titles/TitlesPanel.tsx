@@ -8,10 +8,15 @@ import {
   parseSrt,
 } from "@lumina/core";
 import { createTranscriptionJob, runDemoTranscription, transcriptionToCues } from "@lumina/ai";
+import { useEditorStore } from "../../store/editor-store";
+import { requestTranscription, isFileBacked } from "../../lib/media-api";
 
 export function TitlesPanel() {
   const [text, setText] = useState("Lumina");
   const [animT, setAnimT] = useState(0.5);
+  const [captions, setCaptions] = useState<string>("");
+  const [sttStatus, setSttStatus] = useState("");
+  const project = useEditorStore((s) => s.project);
   const title = useMemo(() => {
     const doc = createTitle(text, "Hero Title");
     return { ...doc, animation: "typewriter" as const };
@@ -25,9 +30,13 @@ export function TitlesPanel() {
     return serializeSrt(cues);
   }, []);
 
+  const media = project.media.find((m) => isFileBacked(m.path) && m.metadata.hasAudio);
+
   return (
     <section className="lum-panel flex flex-col min-h-0">
-      <header className="px-2 py-1.5 border-b border-line text-sm font-medium">Titles / Captions</header>
+      <header className="px-2 py-1.5 border-b border-line text-sm font-medium">
+        Titles / Captions
+      </header>
       <div className="flex-1 overflow-auto lum-scroll p-3 space-y-3 text-sm">
         <label className="block space-y-1">
           <span className="text-xs text-muted">Title text</span>
@@ -57,11 +66,33 @@ export function TitlesPanel() {
           </div>
         </div>
         <div className="text-xs text-muted">Lower third preset: {lower.name}</div>
+
+        <button
+          type="button"
+          className="lum-btn-primary"
+          disabled={!media}
+          onClick={() => {
+            if (!media) return;
+            setSttStatus("Transcribing…");
+            void requestTranscription(media.path).then((job) => {
+              setCaptions(job.resultSrt ?? "");
+              setSttStatus(
+                job.error
+                  ? `Fallback/demo (${job.provider}): ${job.error}`
+                  : `OK via ${job.provider}`,
+              );
+            });
+          }}
+        >
+          Speech-to-text {media ? `(${media.name})` : "(no audio media)"}
+        </button>
+        {sttStatus && <div className="text-[11px] text-muted">{sttStatus}</div>}
+
         <div className="text-xs whitespace-pre-wrap font-mono border border-line p-2 max-h-40 overflow-auto">
-          {demoCaptions}
+          {captions || demoCaptions}
         </div>
         <div className="text-[11px] text-muted">
-          Parsed cues: {parseSrt(demoCaptions).length} (Whisper demo provider)
+          Parsed cues: {parseSrt(captions || demoCaptions).length}
         </div>
       </div>
     </section>

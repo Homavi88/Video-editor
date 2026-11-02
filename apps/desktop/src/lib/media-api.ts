@@ -1,5 +1,5 @@
 /**
- * Client for the Vite/Electron media API (probe, frames, demo ensure, export).
+ * Client for the Vite/Electron media API (probe, frames, demo, export, peaks…).
  */
 
 import type { MediaItem, Sequence } from "@lumina/core";
@@ -11,6 +11,17 @@ export async function apiHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function listEncoders(): Promise<
+  Array<{ id: string; label: string; available: boolean; videoCodecFlag: string }>
+> {
+  const res = await fetch("/api/encoders");
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    encoders: Array<{ id: string; label: string; available: boolean; videoCodecFlag: string }>;
+  };
+  return data.encoders;
 }
 
 export async function ensureDemoMedia(): Promise<{
@@ -40,7 +51,6 @@ export async function probePath(filePath: string): Promise<{
   }
 }
 
-/** Returns an object URL for a PNG frame (caller should revoke). */
 export async function fetchFrameObjectUrl(
   filePath: string,
   timeSeconds: number,
@@ -63,12 +73,76 @@ export async function fetchFrameObjectUrl(
   }
 }
 
+export async function fetchPeaks(
+  filePath: string,
+  buckets = 256,
+): Promise<Float32Array | null> {
+  try {
+    const res = await fetch(
+      `/api/peaks?path=${encodeURIComponent(filePath)}&buckets=${buckets}`,
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { peaks: number[] };
+    return Float32Array.from(data.peaks);
+  } catch {
+    return null;
+  }
+}
+
+export async function requestProxy(filePath: string): Promise<string | null> {
+  const res = await fetch("/api/proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: filePath }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { proxyPath: string };
+  return data.proxyPath;
+}
+
+export async function requestFilmstrip(
+  filePath: string,
+  durationSeconds: number,
+): Promise<string[]> {
+  const res = await fetch(
+    `/api/filmstrip?path=${encodeURIComponent(filePath)}&duration=${durationSeconds}&frames=8`,
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { frames: string[] };
+  return data.frames;
+}
+
+export async function requestTranscription(filePath: string): Promise<{
+  resultSrt: string | null;
+  provider: string;
+  error: string | null;
+}> {
+  const res = await fetch("/api/transcribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: filePath }),
+  });
+  const data = (await res.json()) as {
+    resultSrt: string | null;
+    provider: string;
+    error: string | null;
+  };
+  return data;
+}
+
 export async function exportSequenceApi(input: {
   sequence: Sequence;
   media: readonly MediaItem[];
   outputPath: string;
   dryRun?: boolean;
-}): Promise<{ ok: boolean; args?: string[]; description?: string; error?: string }> {
+  mode?: "concat" | "overlay";
+}): Promise<{
+  ok: boolean;
+  args?: string[];
+  description?: string;
+  encoder?: string;
+  error?: string;
+}> {
   const body = JSON.stringify(input, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
   const res = await fetch("/api/export", {
     method: "POST",
@@ -79,6 +153,7 @@ export async function exportSequenceApi(input: {
     ok?: boolean;
     args?: string[];
     description?: string;
+    encoder?: string;
     error?: string;
   };
   if (!res.ok) return { ok: false, error: data.error ?? res.statusText };

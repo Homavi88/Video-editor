@@ -14,6 +14,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mask model, CPU scopes (waveform/parade/histogram/vectorscope), audio DSP (EQ/comp/reverb).
 - Autosave snapshots + hotkey presets (Lumina/Premiere/FCP/Resolve).
 - `scripts/e2e-smoke.mjs` against running Vite server.
+- Path allowlist for media API; HW encoder detection; multi-track overlay export.
+- Proxy generation, filmstrip, peaks API; timeline waveforms; mask inspector preview.
+- Whisper CLI integration with demo fallback; electron-builder config + `package:desktop`.
 
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.

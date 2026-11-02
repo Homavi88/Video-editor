@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./whisper": {
+      "types": "./dist/whisper.d.ts",
+      "import": "./dist/whisper.js"
     }
   },
   "scripts": {
@@ -20,8 +24,10 @@
     "@lumina/core": "0.0.1"
   },
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.5"
   },
+
   "license": "MIT"
 }
