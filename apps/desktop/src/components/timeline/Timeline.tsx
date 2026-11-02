@@ -8,6 +8,7 @@ import {
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
 import { Waveform } from "./Waveform";
+import { Filmstrip } from "./Filmstrip";
 
 export function Timeline() {
   const locale = useEditorStore((s) => s.locale);
@@ -130,7 +131,9 @@ export function Timeline() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const mediaId = e.dataTransfer.getData("application/x-lumina-media");
+                const mediaId =
+                  e.dataTransfer.getData("application/x-lumina-media") ||
+                  e.dataTransfer.getData("text/plain");
                 if (!mediaId) return;
                 dropMediaOnTimeline(mediaId, track.id, ticksFromClientX(e.clientX));
               }}
@@ -186,7 +189,13 @@ export function Timeline() {
                       {track.kind === "audio" && mediaPath ? (
                         <Waveform mediaPath={mediaPath} width={width} height={track.height - 8} />
                       ) : null}
-                      <div className="truncate font-medium relative z-10">{clip.name}</div>
+                      {track.kind === "video" && mediaPath ? (
+                        <Filmstrip
+                          mediaPath={mediaPath}
+                          durationSeconds={ticksToSeconds(clip.duration)}
+                        />
+                      ) : null}
+                      <div className="truncate font-medium relative z-10 drop-shadow">{clip.name}</div>
                     </div>
                   );
                 })}

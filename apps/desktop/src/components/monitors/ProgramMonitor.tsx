@@ -6,6 +6,7 @@ import {
   requireActiveSequence,
   timelineToSourceTime,
   clipEnd,
+  maskCoverage,
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
 import { fetchFrameObjectUrl, isFileBacked } from "../../lib/media-api";
@@ -15,6 +16,7 @@ export function ProgramMonitor() {
   const playheadTicks = useEditorStore((s) => s.playheadTicks);
   const project = useEditorStore((s) => s.project);
   const revision = useEditorStore((s) => s.revision);
+  const previewMask = useEditorStore((s) => s.previewMask);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
@@ -99,12 +101,22 @@ export function ProgramMonitor() {
       if (!ctx) return;
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, off.width, off.height);
+      if (previewMask) {
+        const { width, height, data: px } = data;
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const a = maskCoverage(previewMask, (x + 0.5) / width, (y + 0.5) / height, height);
+            const i = (y * width + x) * 4;
+            px[i + 3] = Math.round(px[i + 3]! * a);
+          }
+        }
+      }
       renderer.drawPixels(new Uint8Array(data.data.buffer), off.width, off.height, 1);
     };
     img.addEventListener("load", onLoad);
     if (img.complete) onLoad();
     return () => img.removeEventListener("load", onLoad);
-  }, [frameUrl]);
+  }, [frameUrl, previewMask]);
 
   return (
     <section className="lum-panel flex flex-col min-h-0">

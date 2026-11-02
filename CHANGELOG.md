@@ -17,6 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Path allowlist for media API; HW encoder detection; multi-track overlay export.
 - Proxy generation, filmstrip, peaks API; timeline waveforms; mask inspector preview.
 - Whisper CLI integration with demo fallback; electron-builder config + `package:desktop`.
+- Auto-place demo media on V1/A1; Insert/double-click from Media Pool; filmstrip thumbs on clips.
+- Soft mask feather/expansion applied in Program monitor; proxy path attached to media items.
 
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.

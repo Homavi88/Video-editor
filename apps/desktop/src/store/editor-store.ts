@@ -60,8 +60,13 @@ export interface EditorState {
   hotkeyPreset: HotkeyPresetId;
   lastAutosaveAt: string | null;
   interchangePreview: string | null;
+  /** Soft mask applied in Program monitor preview (inspector-driven). */
+  previewMask: import("@lumina/core").MaskShape | null;
   // actions
   setLocale: (locale: Locale) => void;
+  setPreviewMask: (mask: import("@lumina/core").MaskShape | null) => void;
+  placeSelectedMediaAtPlayhead: () => void;
+  attachProxyToMedia: (mediaId: string, proxyPath: string) => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -124,8 +129,41 @@ export const useEditorStore = create<EditorState>((set, get) => {
     hotkeyPreset: "lumina",
     lastAutosaveAt: null,
     interchangePreview: null,
+    previewMask: null,
 
     setLocale: (locale) => set({ locale }),
+    setPreviewMask: (mask) => set({ previewMask: mask }),
+    placeSelectedMediaAtPlayhead: () => {
+      const { selectedMediaId, project, playheadTicks } = get();
+      if (!selectedMediaId) return;
+      const media = project.media.find((m) => m.id === selectedMediaId);
+      if (!media) return;
+      const sequence = requireActiveSequence(project);
+      const trackId =
+        media.kind === "audio"
+          ? sequence.audioTracks[0]!.id
+          : sequence.videoTracks[sequence.videoTracks.length - 1]!.id;
+      get().dropMediaOnTimeline(selectedMediaId, trackId, playheadTicks);
+    },
+    attachProxyToMedia: (mediaId, proxyPath) => {
+      const { project, revision } = get();
+      const media = project.media.map((m) =>
+        m.id === mediaId
+          ? {
+              ...m,
+              proxy: {
+                path: proxyPath,
+                width: 1280,
+                height: 720,
+                videoCodec: "h264",
+              },
+            }
+          : m,
+      );
+      const next = { ...project, media };
+      get().history.reset(next);
+      set({ project: next, revision: revision + 1, status: `Proxy attached: ${proxyPath}` });
+    },
     setTheme: (theme) => {
       document.documentElement.setAttribute("data-theme", theme);
       set({ theme });
@@ -222,7 +260,25 @@ export const useEditorStore = create<EditorState>((set, get) => {
         );
       }
       get().importMediaItems(items);
-      set({ selectedMediaId: items[0]!.id, status: "Loaded real demo media (ffmpeg)" });
+      const loaded = get().project.media;
+      const video = loaded.find((m) => m.kind === "video");
+      const audio = loaded.find((m) => m.kind === "audio");
+      const sequence = requireActiveSequence(get().project);
+      const hasClips = [...sequence.videoTracks, ...sequence.audioTracks].some(
+        (tr) => tr.clips.length > 0,
+      );
+      if (!hasClips && video) {
+        const vTrack = sequence.videoTracks[sequence.videoTracks.length - 1]!;
+        get().dropMediaOnTimeline(video.id, vTrack.id, 0n);
+      }
+      if (!hasClips && audio) {
+        const aTrack = requireActiveSequence(get().project).audioTracks[0]!;
+        get().dropMediaOnTimeline(audio.id, aTrack.id, 0n);
+      }
+      set({
+        selectedMediaId: items[0]!.id,
+        status: "Loaded real demo media (ffmpeg) · placed on V1/A1",
+      });
     },
 
     dropMediaOnTimeline: (mediaId, trackId, startTicks) => {

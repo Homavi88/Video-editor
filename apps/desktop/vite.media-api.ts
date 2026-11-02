@@ -112,11 +112,12 @@ export function luminaMediaApi(): Plugin {
               durationSeconds: duration,
               frames,
             });
-            // Return data URLs for first frame only as proof + paths
-            const first = files[0] ? fs.readFileSync(files[0]) : null;
+            const dataUrls = files.map(
+              (f) => `data:image/png;base64,${fs.readFileSync(f).toString("base64")}`,
+            );
             json(res, {
-              frames: files,
-              previewPngBase64: first ? first.toString("base64") : null,
+              frames: dataUrls,
+              paths: files,
             });
             return;
           }

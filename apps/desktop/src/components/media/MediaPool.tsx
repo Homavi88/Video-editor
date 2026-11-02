@@ -19,6 +19,9 @@ export function MediaPool() {
   const selectMedia = useEditorStore((s) => s.selectMedia);
   const importMediaItems = useEditorStore((s) => s.importMediaItems);
   const addDemoMedia = useEditorStore((s) => s.addDemoMedia);
+  const placeSelectedMediaAtPlayhead = useEditorStore((s) => s.placeSelectedMediaAtPlayhead);
+  const dropMediaOnTimeline = useEditorStore((s) => s.dropMediaOnTimeline);
+  const playheadTicks = useEditorStore((s) => s.playheadTicks);
 
   const onImport = async () => {
     if (window.lumina?.openMediaDialog) {
@@ -51,11 +54,22 @@ export function MediaPool() {
 
   return (
     <section className="lum-panel flex flex-col min-h-0">
-      <header className="flex items-center justify-between px-2 py-1.5 border-b border-line text-sm">
+      <header className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-line text-sm">
         <span className="font-medium">{t(locale, "panel.media")}</span>
-        <button type="button" className="lum-btn-primary" onClick={() => void onImport()}>
-          {t(locale, "action.import")}
-        </button>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            className="lum-btn"
+            disabled={!selectedMediaId}
+            onClick={() => placeSelectedMediaAtPlayhead()}
+            title="Insert at playhead (double-click also works)"
+          >
+            Insert
+          </button>
+          <button type="button" className="lum-btn-primary" onClick={() => void onImport()}>
+            {t(locale, "action.import")}
+          </button>
+        </div>
       </header>
       <div className="flex-1 overflow-auto lum-scroll p-2 space-y-1">
         {project.bins.map((bin) => (
@@ -70,9 +84,21 @@ export function MediaPool() {
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData("application/x-lumina-media", item.id);
+              e.dataTransfer.setData("text/plain", item.id);
               e.dataTransfer.effectAllowed = "copy";
             }}
             onClick={() => selectMedia(item.id)}
+            onDoubleClick={() => {
+              selectMedia(item.id);
+              const sequence = project.sequences.find((s) => s.id === project.activeSequenceId)
+                ?? project.sequences[0];
+              if (!sequence) return;
+              const trackId =
+                item.kind === "audio"
+                  ? sequence.audioTracks[0]!.id
+                  : sequence.videoTracks[sequence.videoTracks.length - 1]!.id;
+              dropMediaOnTimeline(item.id, trackId, playheadTicks);
+            }}
             className={`w-full text-left px-2 py-1.5 border border-transparent hover:border-line ${
               selectedMediaId === item.id ? "bg-accent/15 border-accent/40" : ""
             }`}

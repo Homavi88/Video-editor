@@ -69,35 +69,55 @@ export function createBezierMask(points: readonly BezierPoint[]): MaskShape {
   };
 }
 
-/** Point-in-rect test in normalized space (for CPU mask preview). */
-export function pointInMask(mask: MaskShape, x: number, y: number): boolean {
-  let inside = false;
-  if (mask.kind === "rect") {
-    inside =
-      x >= mask.bounds.x &&
-      x <= mask.bounds.x + mask.bounds.w &&
-      y >= mask.bounds.y &&
-      y <= mask.bounds.y + mask.bounds.h;
-  } else if (mask.kind === "ellipse") {
-    const cx = mask.bounds.x + mask.bounds.w / 2;
-    const cy = mask.bounds.y + mask.bounds.h / 2;
-    const rx = mask.bounds.w / 2;
-    const ry = mask.bounds.h / 2;
-    if (rx <= 0 || ry <= 0) inside = false;
-    else {
-      const nx = (x - cx) / rx;
-      const ny = (y - cy) / ry;
-      inside = nx * nx + ny * ny <= 1;
-    }
-  } else {
-    // Bezier: use polygon fill of anchor points (approximation).
-    inside = pointInPolygon(
+/** Expand/contract mask bounds by expansion (pixels → normalized via refSize). */
+function expandedBounds(mask: MaskShape, refSize = 1080): MaskShape["bounds"] {
+  const grow = mask.expansion / refSize;
+  return {
+    x: mask.bounds.x - grow,
+    y: mask.bounds.y - grow,
+    w: mask.bounds.w + grow * 2,
+    h: mask.bounds.h + grow * 2,
+  };
+}
+
+/** Soft coverage 0..1 in normalized space (feather + expansion). */
+export function maskCoverage(mask: MaskShape, x: number, y: number, refSize = 1080): number {
+  const b = expandedBounds(mask, refSize);
+  let dist: number;
+  if (mask.kind === "ellipse") {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const rx = Math.max(1e-6, b.w / 2);
+    const ry = Math.max(1e-6, b.h / 2);
+    const r = Math.hypot((x - cx) / rx, (y - cy) / ry);
+    dist = (1 - r) * Math.min(rx, ry);
+  } else if (mask.kind === "bezier") {
+    const inside = pointInPolygon(
       x,
       y,
       mask.points.map((p) => [p.x, p.y] as const),
     );
+    dist = inside ? 1 / refSize : -1 / refSize;
+  } else {
+    const dx = x < b.x ? b.x - x : x > b.x + b.w ? x - (b.x + b.w) : 0;
+    const dy = y < b.y ? b.y - y : y > b.y + b.h ? y - (b.y + b.h) : 0;
+    if (dx === 0 && dy === 0) {
+      dist = Math.min(x - b.x, b.x + b.w - x, y - b.y, b.y + b.h - y);
+    } else {
+      dist = -Math.hypot(dx, dy);
+    }
   }
-  return mask.inverted ? !inside : inside;
+  const featherNorm = Math.max(mask.feather, 0) / refSize;
+  let alpha: number;
+  if (featherNorm <= 1e-8) alpha = dist >= 0 ? 1 : 0;
+  else alpha = Math.min(1, Math.max(0, 0.5 + dist / (2 * featherNorm)));
+  if (mask.inverted) alpha = 1 - alpha;
+  return alpha * mask.opacity;
+}
+
+/** Point-in-mask test in normalized space (for CPU mask preview). */
+export function pointInMask(mask: MaskShape, x: number, y: number): boolean {
+  return maskCoverage(mask, x, y) >= 0.5;
 }
 
 function pointInPolygon(x: number, y: number, poly: readonly (readonly [number, number])[]): boolean {

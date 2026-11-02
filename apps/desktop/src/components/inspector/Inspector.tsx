@@ -1,13 +1,11 @@
-import { useMemo, useState } from "react";
-import {
-  t,
-} from "@lumina/i18n";
+import { useEffect, useMemo, useState } from "react";
+import { t } from "@lumina/i18n";
 import {
   requireActiveSequence,
   ticksToSeconds,
   createRectMask,
   createEllipseMask,
-  pointInMask,
+  maskCoverage,
   type MaskShape,
 } from "@lumina/core";
 import { useEditorStore } from "../../store/editor-store";
@@ -21,6 +19,8 @@ export function Inspector() {
   const trimSelected = useEditorStore((s) => s.trimSelected);
   const setSelectedSpeed = useEditorStore((s) => s.setSelectedSpeed);
   const addMarkerAtPlayhead = useEditorStore((s) => s.addMarkerAtPlayhead);
+  const setPreviewMask = useEditorStore((s) => s.setPreviewMask);
+  const attachProxyToMedia = useEditorStore((s) => s.attachProxyToMedia);
   const [mask, setMask] = useState<MaskShape>(() => createRectMask());
   const [proxyStatus, setProxyStatus] = useState<string>("");
   const sequence = requireActiveSequence(project);
@@ -30,12 +30,16 @@ export function Inspector() {
     .find((x) => x.clip.id === selectedClipId);
   const media = project.media.find((m) => m.id === selectedMediaId);
 
+  useEffect(() => {
+    setPreviewMask(clip ? mask : null);
+  }, [clip, mask, setPreviewMask]);
+
   const maskPreview = useMemo(() => {
     const size = 64;
-    const cells: boolean[] = [];
+    const cells: number[] = [];
     for (let y = 0; y < size; y += 1) {
       for (let x = 0; x < size; x += 1) {
-        cells.push(pointInMask(mask, (x + 0.5) / size, (y + 0.5) / size));
+        cells.push(maskCoverage(mask, (x + 0.5) / size, (y + 0.5) / size, size));
       }
     }
     return { size, cells };
@@ -105,6 +109,28 @@ export function Inspector() {
                 Invert
               </button>
             </div>
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Feather
+              <input
+                type="range"
+                min={0}
+                max={64}
+                value={mask.feather}
+                onChange={(e) => setMask({ ...mask, feather: Number(e.target.value) })}
+              />
+              <span className="font-mono w-8">{mask.feather}</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Expand
+              <input
+                type="range"
+                min={-40}
+                max={40}
+                value={mask.expansion}
+                onChange={(e) => setMask({ ...mask, expansion: Number(e.target.value) })}
+              />
+              <span className="font-mono w-8">{mask.expansion}</span>
+            </label>
             <canvas
               width={maskPreview.size}
               height={maskPreview.size}
@@ -115,18 +141,20 @@ export function Inspector() {
                 if (!ctx) return;
                 const img = ctx.createImageData(maskPreview.size, maskPreview.size);
                 for (let i = 0; i < maskPreview.cells.length; i += 1) {
-                  const on = maskPreview.cells[i]!;
+                  const a = maskPreview.cells[i]!;
                   const o = i * 4;
-                  img.data[o] = on ? 61 : 20;
-                  img.data[o + 1] = on ? 155 : 20;
-                  img.data[o + 2] = on ? 253 : 28;
+                  img.data[o] = Math.round(61 * a + 20 * (1 - a));
+                  img.data[o + 1] = Math.round(155 * a + 20 * (1 - a));
+                  img.data[o + 2] = Math.round(253 * a + 28 * (1 - a));
                   img.data[o + 3] = 255;
                 }
                 ctx.putImageData(img, 0, 0);
               }}
             />
             <div className="text-[11px] text-muted">
-              {mask.kind} · feather {mask.feather}px · opacity {mask.opacity}
+              {mask.kind}
+              {mask.inverted ? " · inverted" : ""} · feather {mask.feather}px · expand{" "}
+              {mask.expansion}px
             </div>
 
             <div className="text-muted text-xs uppercase tracking-wide pt-2">Effects</div>
@@ -142,6 +170,7 @@ export function Inspector() {
             <Field label="Name" value={media.name} />
             <Field label="Kind" value={media.kind} />
             <Field label="Path" value={media.path} />
+            {media.proxy ? <Field label="Proxy" value={media.proxy.path} /> : null}
             <Field
               label="Size"
               value={
@@ -162,7 +191,12 @@ export function Inspector() {
                   void (async () => {
                     setProxyStatus("Generating proxy…");
                     const proxy = await requestProxy(media.path);
-                    setProxyStatus(proxy ? `Proxy: ${proxy}` : "Proxy failed");
+                    if (proxy) {
+                      attachProxyToMedia(media.id, proxy);
+                      setProxyStatus(`Proxy: ${proxy}`);
+                    } else {
+                      setProxyStatus("Proxy failed");
+                    }
                   })();
                 }}
               >
