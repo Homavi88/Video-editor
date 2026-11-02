@@ -183,29 +183,30 @@ Workspaces: Edit, Color, Audio, Effects, Export — saved dock layouts in user c
 
 ## 9. Stage map
 
-| Stage | Focus |
-| --- | --- |
-| **0** | Architecture, `@lumina/core`, project format ← **current** |
-| 1 | Electron shell, panels, media pool import UX |
-| 2 | Decode engine + WebGL preview |
-| 3 | Timeline tools + full undo |
-| 4 | Compositing / keyframes / masks |
-| 5 | GPU transitions |
-| 6 | Titles / subtitles / STT |
-| 7 | Effects / color / scopes / LUT |
-| 8 | Audio mixer |
-| 9 | Export / transcoder |
-| 10 | AI module + plugin SDK |
-| 11 | Tests, installers, docs |
+| Stage | Focus | Status |
+| --- | --- | --- |
+| 0 | Architecture, `@lumina/core`, project format | done |
+| 1 | Electron shell, panels, media pool import UX | done |
+| 2 | Decode engine + WebGL preview | done (bars + ffprobe; FFmpeg frame decode next) |
+| 3 | Timeline tools + undo | done (select/razor/snap/move/split/lift/extract) |
+| 4 | Compositing / keyframes / masks | foundation (transform/blend/keyframes; masks API next) |
+| 5 | GPU transitions | catalog + GLSL crossfade/wipe |
+| 6 | Titles / subtitles / STT | done (titles + SRT/VTT + demo Whisper) |
+| 7 | Effects / color / LUT | catalog + LGG/LUT math + Color workspace |
+| 8 | Audio mixer | mixer UI + ducking/silence helpers |
+| 9 | Export / transcoder | presets + queue + ffmpeg args + patent gate |
+| 10 | AI module + plugin SDK | `@lumina/ai` + `@lumina/plugin-sdk` + example plugin |
+| 11 | Tests, pack script, docs | done (unit tests + `pack:linux`) |
 
 ---
 
-## 10. How to verify Stage 0
+## 10. How to verify
 
 ```bash
 npm install
+npm run build
 npm test
 npm run typecheck
+npm run native:test
+npm run dev
 ```
-
-Expected: all `@lumina/core` unit tests pass; `tsc --noEmit` clean.

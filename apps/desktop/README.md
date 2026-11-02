@@ -1,5 +1,12 @@
 # @lumina/desktop
 
-Electron + React application shell. Implementation starts in **Stage 1** (panels, media pool, state routing).
+Lumina NLE shell — Electron main process + Vite/React renderer.
 
-Depends on `@lumina/core` for the project document and command history.
+```bash
+npm run dev            # renderer only
+npm run dev:electron   # Electron + Vite
+npm run build
+npm test
+```
+
+Workspaces: Edit, Color, Audio, Effects, Export. State lives in `src/store/editor-store.ts` on top of `@lumina/core` commands.
