@@ -37,30 +37,40 @@ export function assertAllowedPath(
   if (!ok) {
     throw new Error(`path outside allowed roots: ${resolved}`);
   }
-  // Reject symlinks that escape roots
+  // Reject symlinks that escape roots (resolve both file and parent).
   try {
     const real = fs.realpathSync(resolved);
-    const realOk = roots.some((root) => {
-      const r = path.resolve(root);
-      try {
-        const rr = fs.existsSync(r) ? fs.realpathSync(r) : r;
-        return real === rr || real.startsWith(rr + path.sep);
-      } catch {
-        return real === r || real.startsWith(r + path.sep);
-      }
-    });
-    if (!realOk) throw new Error(`symlink escapes allowed roots: ${resolved}`);
+    if (!isUnderRoots(real, roots)) {
+      throw new Error(`symlink escapes allowed roots: ${resolved}`);
+    }
     return real;
   } catch (err) {
-    // File may not exist yet (export output) — allow if parent is under a root
+    // File may not exist yet (export output) — resolve parent and check real path.
     const parent = path.dirname(resolved);
-    const parentOk = roots.some((root) => {
-      const r = path.resolve(root);
-      return parent === r || parent.startsWith(r + path.sep);
-    });
-    if (!parentOk) {
-      throw err instanceof Error ? err : new Error(String(err));
+    try {
+      const realParent = fs.realpathSync(parent);
+      if (!isUnderRoots(realParent, roots)) {
+        throw new Error(`symlink escapes allowed roots: ${resolved}`);
+      }
+      return path.join(realParent, path.basename(resolved));
+    } catch {
+      const parentOk = isUnderRoots(parent, roots);
+      if (!parentOk) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      return resolved;
     }
-    return resolved;
   }
+}
+
+function isUnderRoots(candidate: string, roots: readonly string[]): boolean {
+  return roots.some((root) => {
+    const r = path.resolve(root);
+    try {
+      const rr = fs.existsSync(r) ? fs.realpathSync(r) : r;
+      return candidate === rr || candidate.startsWith(rr + path.sep);
+    } catch {
+      return candidate === r || candidate.startsWith(r + path.sep);
+    }
+  });
 }

@@ -103,9 +103,10 @@ export async function requestProxy(filePath: string): Promise<string | null> {
 export async function requestFilmstrip(
   filePath: string,
   durationSeconds: number,
+  startSeconds = 0,
 ): Promise<string[]> {
   const res = await fetch(
-    `/api/filmstrip?path=${encodeURIComponent(filePath)}&duration=${durationSeconds}&frames=8`,
+    `/api/filmstrip?path=${encodeURIComponent(filePath)}&duration=${durationSeconds}&start=${startSeconds}&frames=8`,
   );
   if (!res.ok) return [];
   const data = (await res.json()) as { frames: string[] };
@@ -137,6 +138,12 @@ export async function exportSequenceApi(input: {
   dryRun?: boolean;
   mode?: "concat" | "overlay";
   preferredFadeSeconds?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  crf?: number;
+  videoCodec?: string;
+  audioCodec?: string;
 }): Promise<{
   ok: boolean;
   args?: string[];

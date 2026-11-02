@@ -2,11 +2,11 @@ appId: com.lumina.editor
 productName: Lumina
 copyright: Copyright © Lumina
 directories:
-  output: release
+  output: ../../release
   buildResources: build
 files:
-  - dist/**
-  - electron/**
+  - dist/**/*
+  - electron/**/*
   - package.json
 extraMetadata:
   main: electron/main.mjs

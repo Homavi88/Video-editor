@@ -4,9 +4,11 @@ import { requestFilmstrip, isFileBacked } from "../../lib/media-api";
 export function Filmstrip({
   mediaPath,
   durationSeconds,
+  inPointSeconds = 0,
 }: {
   mediaPath: string;
   durationSeconds: number;
+  inPointSeconds?: number;
 }) {
   const [frames, setFrames] = useState<string[]>([]);
 
@@ -16,13 +18,13 @@ export function Filmstrip({
       setFrames([]);
       return;
     }
-    void requestFilmstrip(mediaPath, durationSeconds).then((urls) => {
+    void requestFilmstrip(mediaPath, durationSeconds, inPointSeconds).then((urls) => {
       if (!cancelled) setFrames(urls);
     });
     return () => {
       cancelled = true;
     };
-  }, [mediaPath, durationSeconds]);
+  }, [mediaPath, durationSeconds, inPointSeconds]);
 
   if (frames.length === 0) return null;
   return (

@@ -12,6 +12,8 @@ export interface FilmstripOptions {
   readonly thumbWidth?: number;
   readonly thumbHeight?: number;
   readonly durationSeconds: number;
+  /** Source in-point offset in seconds (defaults to 0). */
+  readonly startSeconds?: number;
   readonly ffmpegBin?: string;
 }
 
@@ -24,17 +26,18 @@ export async function generateFilmstrip(
   const frames = Math.max(1, options.frames ?? 8);
   const w = options.thumbWidth ?? 160;
   const h = options.thumbHeight ?? 90;
+  const start = Math.max(0, options.startSeconds ?? 0);
   await fs.mkdir(cacheDir, { recursive: true });
   const key = createHash("sha1")
-    .update(`${inputPath}|${frames}|${w}x${h}|${options.durationSeconds}`)
+    .update(`${inputPath}|${frames}|${w}x${h}|${start}|${options.durationSeconds}`)
     .digest("hex")
     .slice(0, 12);
   const out: string[] = [];
   for (let i = 0; i < frames; i += 1) {
     const t =
       options.durationSeconds <= 0
-        ? 0
-        : (i + 0.5) * (options.durationSeconds / frames);
+        ? start
+        : start + (i + 0.5) * (options.durationSeconds / frames);
     const file = path.join(cacheDir, `strip-${key}-${i}.png`);
     try {
       await fs.access(file);

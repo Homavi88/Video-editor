@@ -378,6 +378,7 @@ export function Timeline() {
                         <Filmstrip
                           mediaPath={mediaPath}
                           durationSeconds={ticksToSeconds(clip.duration)}
+                          inPointSeconds={ticksToSeconds(clip.inPoint)}
                         />
                       ) : null}
                       <div className="truncate font-medium relative z-10 drop-shadow">{clip.name}</div>

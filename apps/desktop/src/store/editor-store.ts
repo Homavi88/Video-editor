@@ -57,6 +57,9 @@ import {
   ImportSubtitleCuesCommand,
   ReplaceClipMediaCommand,
   LinkClipsCommand,
+  AttachProxyCommand,
+  getExportPreset,
+  mapVideoCodec,
   cuesAtTime,
   type Project,
   type MediaItem,
@@ -801,23 +804,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
       get().dropMediaOnTimeline(selectedMediaId, trackId, playheadTicks);
     },
     attachProxyToMedia: (mediaId, proxyPath) => {
-      const { project, revision } = get();
-      const media = project.media.map((m) =>
-        m.id === mediaId
-          ? {
-              ...m,
-              proxy: {
-                path: proxyPath,
-                width: 1280,
-                height: 720,
-                videoCodec: "h264",
-              },
-            }
-          : m,
-      );
-      const next = { ...project, media };
-      get().history.reset(next);
-      set({ project: next, revision: revision + 1, status: `Proxy attached: ${proxyPath}` });
+      const { history, revision } = get();
+      history.push(new AttachProxyCommand(mediaId, proxyPath));
+      set(bump(sync(history), revision, `Proxy attached: ${proxyPath}`));
     },
     setTheme: (theme) => {
       document.documentElement.setAttribute("data-theme", theme);
@@ -1108,15 +1097,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       try {
         const { project } = get();
         const sequence = requireActiveSequence(project);
+        const preset = getExportPreset(next.presetId);
         mark(next.id, { progress: 0.35 });
-        const result = await exportSequenceApi({
+        const exportInput: Parameters<typeof exportSequenceApi>[0] = {
           sequence: applyWorkArea(sequence, get().exportWorkAreaOnly),
           media: project.media,
           outputPath: next.outputPath,
           dryRun: false,
-          // Let media-client infer concat vs overlay (gaps / multi-track).
           preferredFadeSeconds: get().transitionDurationSec,
-        });
+        };
+        if (preset) {
+          if (preset.width > 0) exportInput.width = preset.width;
+          if (preset.height > 0) exportInput.height = preset.height;
+          exportInput.fps = preset.frameRate.numerator / preset.frameRate.denominator;
+          if (preset.crf !== undefined) exportInput.crf = preset.crf;
+          if (preset.videoCodec !== "none") exportInput.videoCodec = mapVideoCodec(preset.videoCodec);
+          if (preset.audioCodec !== "none") exportInput.audioCodec = preset.audioCodec;
+        }
+        const result = await exportSequenceApi(exportInput);
         if (!result.ok) {
           mark(next.id, {
             status: "failed",

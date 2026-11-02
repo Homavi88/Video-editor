@@ -17,10 +17,24 @@ export function SourceMonitor() {
   const media = project.media.find((m) => m.id === selectedMediaId) ?? project.media[0];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [scrubSec, setScrubSec] = useState(0);
 
   const mediaDur = media ? Math.max(0.1, ticksToSeconds(media.metadata.duration)) : 10;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      rendererRef.current = new WebGLPreviewRenderer(canvas);
+    } catch {
+      rendererRef.current = null;
+    }
+    return () => {
+      rendererRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     let revoked: string | null = null;
@@ -28,13 +42,8 @@ export function SourceMonitor() {
 
     const run = async () => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      let renderer: WebGLPreviewRenderer | null = null;
-      try {
-        renderer = new WebGLPreviewRenderer(canvas);
-      } catch {
-        return;
-      }
+      const renderer = rendererRef.current;
+      if (!canvas || !renderer) return;
       const parent = canvas.parentElement?.getBoundingClientRect();
       if (parent) {
         canvas.width = Math.floor(parent.width);
@@ -43,7 +52,7 @@ export function SourceMonitor() {
       }
 
       if (media && isFileBacked(media.path) && media.kind !== "audio") {
-        const url = await fetchFrameObjectUrl(media.path, scrubSec || 1, 640, 360);
+        const url = await fetchFrameObjectUrl(media.path, scrubSec || 0, 640, 360);
         if (cancelled) {
           if (url) URL.revokeObjectURL(url);
           return;
@@ -67,12 +76,12 @@ export function SourceMonitor() {
   }, [media?.id, media?.kind, media?.path, scrubSec]);
 
   useEffect(() => {
-    if (!frameUrl || !imgRef.current || !canvasRef.current) return;
+    if (!frameUrl || !imgRef.current || !canvasRef.current || !rendererRef.current) return;
     const img = imgRef.current;
     const onLoad = () => {
       try {
         const canvas = canvasRef.current!;
-        const renderer = new WebGLPreviewRenderer(canvas);
+        const renderer = rendererRef.current!;
         const parent = canvas.parentElement?.getBoundingClientRect();
         if (parent) {
           canvas.width = Math.floor(parent.width);

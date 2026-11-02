@@ -208,9 +208,18 @@ export class SlideEditCommand implements Command {
     const clips = sorted.map((c, i) => {
       if (i === idx) return next;
       if (i === idx - 1) {
-        // Trim left neighbor out-point to stay adjacent to slid clip.
-        const newDur = newStart - c.start;
-        if (newDur <= 0n) return c;
+        // Trim/extend left neighbor out-point to stay adjacent to slid clip.
+        let newDur = newStart - c.start;
+        if (newDur <= 0n) {
+          // Collapse left neighbor to 1-tick stub ending at newStart when fully covered.
+          newDur = 1n;
+          return {
+            ...c,
+            start: newStart > 0n ? newStart - 1n : 0n,
+            duration: newDur,
+            outPoint: c.inPoint + scaleSource(c, newDur),
+          };
+        }
         return {
           ...c,
           duration: newDur,
@@ -221,7 +230,15 @@ export class SlideEditCommand implements Command {
         const newRightStart = newStart + clip.duration;
         const delta = newRightStart - c.start;
         const newDur = c.duration - delta;
-        if (newDur <= 0n) return c;
+        if (newDur <= 0n) {
+          // Keep a 1-tick right neighbor after the slid clip rather than overlapping.
+          return {
+            ...c,
+            start: newRightStart,
+            duration: 1n,
+            inPoint: c.inPoint + scaleSource(c, c.duration - 1n),
+          };
+        }
         return {
           ...c,
           start: newRightStart,

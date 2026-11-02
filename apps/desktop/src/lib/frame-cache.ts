@@ -7,6 +7,7 @@ import { fetchFrameObjectUrl } from "./media-api";
 
 const MAX_ENTRIES = 48;
 const cache = new Map<string, string>();
+const inflight = new Map<string, Promise<string | null>>();
 
 export function quantizeTime(seconds: number, fps = 12): number {
   if (!Number.isFinite(seconds) || seconds < 0) return 0;
@@ -46,9 +47,24 @@ export async function getCachedFrame(
     touch(k, hit);
     return hit;
   }
-  const url = await fetchFrameObjectUrl(filePath, t, width, height);
-  if (!url) return null;
-  return touch(k, url);
+  const pending = inflight.get(k);
+  if (pending) return pending;
+  const job = (async () => {
+    const url = await fetchFrameObjectUrl(filePath, t, width, height);
+    if (!url) return null;
+    // Another fetch may have won the race and cached first — drop the loser blob.
+    const existing = cache.get(k);
+    if (existing) {
+      URL.revokeObjectURL(url);
+      touch(k, existing);
+      return existing;
+    }
+    return touch(k, url);
+  })().finally(() => {
+    inflight.delete(k);
+  });
+  inflight.set(k, job);
+  return job;
 }
 
 /** Prefetch upcoming quantized frames without blocking UI. */

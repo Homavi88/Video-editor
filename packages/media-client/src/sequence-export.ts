@@ -108,41 +108,55 @@ function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
   let inputIndex = 0;
   const vLabels: string[] = [];
 
+  let totalTimelineDur = 0;
   for (const { clip, media } of vClips) {
+    const srcDur = Math.max(
+      ticksToSeconds(clip.outPoint - clip.inPoint),
+      ticksToSeconds(clip.duration) * Math.abs(clip.speed || 1),
+    );
     args.push(
       "-ss",
       String(ticksToSeconds(clip.inPoint)),
       "-t",
-      String(ticksToSeconds(clip.duration)),
+      String(srcDur),
       "-i",
       media.proxy?.path ?? media.path,
     );
     const label = `v${inputIndex}`;
-    filterParts.push(scalePad(inputIndex, width, height, fps, label));
+    filterParts.push(scalePad(inputIndex, width, height, fps, label, clip.speed || 1));
     vLabels.push(`[${label}]`);
+    totalTimelineDur += ticksToSeconds(clip.duration);
     inputIndex += 1;
   }
 
   const aLabels: string[] = [];
   for (const { clip, media } of aClips) {
+    const srcDur = Math.max(
+      ticksToSeconds(clip.outPoint - clip.inPoint),
+      ticksToSeconds(clip.duration) * Math.abs(clip.speed || 1),
+    );
     args.push(
       "-ss",
       String(ticksToSeconds(clip.inPoint)),
       "-t",
-      String(ticksToSeconds(clip.duration)),
+      String(srcDur),
       "-i",
       media.proxy?.path ?? media.path,
     );
     const label = `a${inputIndex}`;
-    filterParts.push(
-      `[${inputIndex}:a]aformat=sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS[${label}]`,
-    );
+    filterParts.push(audioPrep(inputIndex, label, clip.speed || 1));
     aLabels.push(`[${label}]`);
     inputIndex += 1;
   }
 
+  let videoOutDur = totalTimelineDur;
   if (vLabels.length === 0) {
-    const dur = Math.max(1, ...aClips.map(({ clip }) => ticksToSeconds(clipEnd(clip))));
+    const dur = Math.max(
+      1,
+      ...aClips.map(({ clip }) => ticksToSeconds(clipEnd(clip))),
+      ...aClips.map(({ clip }) => ticksToSeconds(clip.duration)),
+    );
+    videoOutDur = dur;
     filterParts.push(`color=c=black:s=${width}x${height}:r=${fps}:d=${dur}[vout]`);
   } else if (vLabels.length === 1) {
     filterParts.push(`${vLabels[0]}null[vout]`);
@@ -172,14 +186,41 @@ function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
       }
       current = `[${out}]`;
     }
+    videoOutDur = currentDur;
   } else {
     filterParts.push(`${vLabels.join("")}concat=n=${vLabels.length}:v=1:a=0[vout]`);
   }
 
   if (aLabels.length === 0) {
-    filterParts.push(`anullsrc=r=48000:cl=stereo,atrim=0:1[aout]`);
+    filterParts.push(
+      `anullsrc=r=48000:cl=stereo,atrim=0:${Math.max(0.1, videoOutDur).toFixed(3)}[aout]`,
+    );
   } else if (aLabels.length === 1) {
     filterParts.push(`${aLabels[0]}anull[aout]`);
+  } else if (hasAnyCrossfade(vClips) && aLabels.length === vLabels.length) {
+    // Mirror video xfade with acrossfade so A/V stay aligned.
+    let current = aLabels[0]!;
+    let currentDur = ticksToSeconds(vClips[0]!.clip.duration);
+    for (let i = 1; i < aLabels.length; i += 1) {
+      const prev = vClips[i - 1]!.clip;
+      const nextLabel = aLabels[i]!;
+      const nextDur = ticksToSeconds(vClips[i]!.clip.duration);
+      const preferred = input.preferredFadeSeconds ?? 1;
+      const fade = prev.transitionOutId
+        ? Math.min(preferred, currentDur / 2, nextDur / 2)
+        : 0;
+      const out = i === aLabels.length - 1 ? "aout" : `axf${i}`;
+      if (fade > 0.01) {
+        filterParts.push(
+          `${current}${nextLabel}acrossfade=d=${fade.toFixed(3)}:c1=tri:c2=tri[${out}]`,
+        );
+        currentDur = currentDur + nextDur - fade;
+      } else {
+        filterParts.push(`${current}${nextLabel}concat=n=2:v=0:a=1[${out}]`);
+        currentDur = currentDur + nextDur;
+      }
+      current = `[${out}]`;
+    }
   } else {
     filterParts.push(`${aLabels.join("")}concat=n=${aLabels.length}:v=0:a=1[aout]`);
   }
@@ -231,23 +272,38 @@ function buildOverlayCommand(input: SequenceExportInput): BuiltExportCommand {
   let inputIndex = 0;
   const overlayLabels: string[] = [];
 
+  const overlayMeta: Array<{ label: string; start: number; end: number }> = [];
   for (const { clip, media } of layers) {
     const start = ticksToSeconds(clip.start);
     const inSec = ticksToSeconds(clip.inPoint);
     const dur = ticksToSeconds(clip.duration);
-    args.push("-ss", String(inSec), "-t", String(dur), "-i", media.proxy?.path ?? media.path);
-    const prepared = `p${inputIndex}`;
-    filterParts.push(
-      `[${inputIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},setpts=PTS-STARTPTS+${start}/TB,format=rgba[${prepared}]`,
+    const srcDur = Math.max(
+      ticksToSeconds(clip.outPoint - clip.inPoint),
+      dur * Math.abs(clip.speed || 1),
     );
+    args.push("-ss", String(inSec), "-t", String(srcDur), "-i", media.proxy?.path ?? media.path);
+    const prepared = `p${inputIndex}`;
+    const speed = clip.speed || 1;
+    const abs = Math.abs(speed) || 1;
+    const rev = speed < 0 ? ",reverse" : "";
+    const pts =
+      abs === 1
+        ? `setpts=PTS-STARTPTS+${start}/TB`
+        : `setpts=(PTS-STARTPTS)/${abs.toFixed(6)}+${start}/TB`;
+    filterParts.push(
+      `[${inputIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}${rev},${pts},format=rgba[${prepared}]`,
+    );
+    overlayMeta.push({ label: prepared, start, end: start + dur });
     overlayLabels.push(prepared);
     inputIndex += 1;
   }
 
   let current = "base";
-  overlayLabels.forEach((label, i) => {
-    const next = i === overlayLabels.length - 1 ? "vout" : `o${i}`;
-    filterParts.push(`[${current}][${label}]overlay=0:0:format=auto[${next}]`);
+  overlayMeta.forEach((meta, i) => {
+    const next = i === overlayMeta.length - 1 ? "vout" : `o${i}`;
+    filterParts.push(
+      `[${current}][${meta.label}]overlay=0:0:format=auto:enable='between(t\\,${meta.start.toFixed(3)}\\,${meta.end.toFixed(3)})'[${next}]`,
+    );
     current = next;
   });
   if (overlayLabels.length === 0) {
@@ -259,10 +315,19 @@ function buildOverlayCommand(input: SequenceExportInput): BuiltExportCommand {
     const start = ticksToSeconds(clip.start);
     const inSec = ticksToSeconds(clip.inPoint);
     const dur = ticksToSeconds(clip.duration);
-    args.push("-ss", String(inSec), "-t", String(dur), "-i", media.proxy?.path ?? media.path);
+    const srcDur = Math.max(
+      ticksToSeconds(clip.outPoint - clip.inPoint),
+      dur * Math.abs(clip.speed || 1),
+    );
+    args.push("-ss", String(inSec), "-t", String(srcDur), "-i", media.proxy?.path ?? media.path);
     const label = `a${inputIndex}`;
+    const speed = clip.speed || 1;
+    const abs = Math.abs(speed) || 1;
+    const tempo =
+      abs === 1 ? "" : abs > 2 ? `,atempo=2.0,atempo=${(abs / 2).toFixed(4)}` : `,atempo=${abs.toFixed(4)}`;
+    const rev = speed < 0 ? ",areverse" : "";
     filterParts.push(
-      `[${inputIndex}:a]aformat=sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS,adelay=${Math.round(start * 1000)}|${Math.round(start * 1000)}[${label}]`,
+      `[${inputIndex}:a]aformat=sample_rates=48000:channel_layouts=stereo${rev}${tempo},asetpts=PTS-STARTPTS,adelay=${Math.round(start * 1000)}|${Math.round(start * 1000)},apad=whole_dur=${durationSec}[${label}]`,
     );
     aLabels.push(`[${label}]`);
     inputIndex += 1;
@@ -271,10 +336,10 @@ function buildOverlayCommand(input: SequenceExportInput): BuiltExportCommand {
   if (aLabels.length === 0) {
     filterParts.push(`anullsrc=r=48000:cl=stereo,atrim=0:${durationSec}[aout]`);
   } else if (aLabels.length === 1) {
-    filterParts.push(`${aLabels[0]}anull[aout]`);
+    filterParts.push(`${aLabels[0]}atrim=0:${durationSec}[aout]`);
   } else {
     filterParts.push(
-      `${aLabels.join("")}amix=inputs=${aLabels.length}:normalize=0[aout]`,
+      `${aLabels.join("")}amix=inputs=${aLabels.length}:normalize=0,atrim=0:${durationSec}[aout]`,
     );
   }
 
@@ -315,8 +380,25 @@ function scalePad(
   height: number,
   fps: number,
   label: string,
+  speed = 1,
 ): string {
-  return `[${inputIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},setpts=PTS-STARTPTS,setsar=1[${label}]`;
+  const abs = Math.abs(speed) || 1;
+  const rev = speed < 0 ? ",reverse" : "";
+  const pts = abs === 1 ? "setpts=PTS-STARTPTS" : `setpts=(PTS-STARTPTS)/${abs.toFixed(6)}`;
+  return `[${inputIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}${rev},${pts},setsar=1[${label}]`;
+}
+
+function audioPrep(inputIndex: number, label: string, speed = 1): string {
+  const abs = Math.abs(speed) || 1;
+  const rev = speed < 0 ? ",areverse" : "";
+  // atempo only supports 0.5–2.0; chain when needed.
+  let tempo = "";
+  if (abs !== 1) {
+    if (abs > 2) tempo = `,atempo=2.0,atempo=${(abs / 2).toFixed(4)}`;
+    else if (abs < 0.5) tempo = `,atempo=0.5,atempo=${(abs / 0.5).toFixed(4)}`;
+    else tempo = `,atempo=${abs.toFixed(4)}`;
+  }
+  return `[${inputIndex}:a]aformat=sample_rates=48000:channel_layouts=stereo${rev}${tempo},asetpts=PTS-STARTPTS[${label}]`;
 }
 
 function pushMaps(
@@ -354,11 +436,16 @@ function swapVideoCodec(args: string[], codec: string): string[] {
   const next = [...args];
   const idx = next.indexOf("-c:v");
   if (idx >= 0 && idx + 1 < next.length) next[idx + 1] = codec;
-  // NVENC prefers -cq over -crf
-  if (codec.includes("nvenc") || codec.includes("qsv") || codec.includes("amf")) {
-    const crfIdx = next.indexOf("-crf");
+  const crfIdx = next.indexOf("-crf");
+  // NVENC/AMF/QSV prefer -cq/-q:v; VideoToolbox rejects libx264-style -crf.
+  if (codec.includes("nvenc")) {
+    if (crfIdx >= 0) next[crfIdx] = "-cq";
+  } else if (codec.includes("qsv") || codec.includes("amf")) {
+    if (crfIdx >= 0) next[crfIdx] = "-q:v";
+  } else if (codec.includes("videotoolbox")) {
     if (crfIdx >= 0) {
-      next[crfIdx] = codec.includes("nvenc") ? "-cq" : "-q:v";
+      next[crfIdx] = "-q:v";
+      if (crfIdx + 1 < next.length) next[crfIdx + 1] = "65";
     }
   }
   return next;

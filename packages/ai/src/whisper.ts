@@ -81,6 +81,8 @@ function run(bin: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
+    // Drain stdout so a chatty Whisper build cannot fill the pipe and deadlock.
+    child.stdout?.on("data", () => undefined);
     child.stderr.on("data", (c: Buffer) => {
       stderr += c.toString("utf8");
     });

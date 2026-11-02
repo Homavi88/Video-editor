@@ -140,9 +140,11 @@ export function luminaMediaApi(): Plugin {
           if (url.pathname === "/api/filmstrip") {
             const filePath = assertAllowedPath(need(url, "path"), ROOTS);
             const duration = Number(url.searchParams.get("duration") ?? "8");
+            const start = Number(url.searchParams.get("start") ?? "0");
             const frames = Number(url.searchParams.get("frames") ?? "8");
             const files = await generateFilmstrip(filePath, path.join(CACHE, "filmstrip"), {
               durationSeconds: duration,
+              startSeconds: start,
               frames,
             });
             const dataUrls = files.map(
@@ -203,6 +205,12 @@ export function luminaMediaApi(): Plugin {
               dryRun?: boolean;
               mode?: "concat" | "overlay";
               preferredFadeSeconds?: number;
+              width?: number;
+              height?: number;
+              fps?: number;
+              crf?: number;
+              videoCodec?: string;
+              audioCodec?: string;
             };
             payload.outputPath = assertAllowedPath(payload.outputPath, ROOTS);
             const revived = reviveProjectBits(payload);
@@ -210,6 +218,12 @@ export function luminaMediaApi(): Plugin {
               ...revived,
               mode: payload.mode,
               preferredFadeSeconds: payload.preferredFadeSeconds,
+              width: payload.width,
+              height: payload.height,
+              fps: payload.fps,
+              crf: payload.crf,
+              videoCodec: payload.videoCodec,
+              audioCodec: payload.audioCodec,
             };
             if (payload.dryRun) {
               const cmd = buildSequenceExportCommand(withMode);

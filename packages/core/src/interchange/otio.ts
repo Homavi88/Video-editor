@@ -19,7 +19,16 @@ interface OtioTrack {
   readonly OTIO_SCHEMA: "Track.1";
   readonly name: string;
   readonly kind: "Video" | "Audio";
-  readonly children: OtioClip[];
+  readonly children: Array<OtioClip | OtioGap>;
+}
+
+interface OtioGap {
+  readonly OTIO_SCHEMA: "Gap.1";
+  readonly name: string;
+  readonly source_range: {
+    readonly start_time: { readonly value: number; readonly rate: number };
+    readonly duration: { readonly value: number; readonly rate: number };
+  };
 }
 
 interface OtioClip {
@@ -70,11 +79,24 @@ function toOtioTrack(
   mediaById: Map<string, MediaItem>,
   rate: number,
 ): OtioTrack {
-  const children: OtioClip[] = [];
-  for (const clip of clips) {
+  const children: Array<OtioClip | OtioGap> = [];
+  const sorted = [...clips].sort((a, b) => (a.start < b.start ? -1 : 1));
+  let cursor = 0;
+  for (const clip of sorted) {
     if (clip.source.type !== "media") continue;
     const item = mediaById.get(clip.source.mediaId);
     if (!item) continue;
+    const startSec = ticksToSeconds(clip.start);
+    if (startSec > cursor + 1e-6) {
+      children.push({
+        OTIO_SCHEMA: "Gap.1",
+        name: "Gap",
+        source_range: {
+          start_time: { value: 0, rate },
+          duration: { value: (startSec - cursor) * rate, rate },
+        },
+      });
+    }
     children.push({
       OTIO_SCHEMA: "Clip.1",
       name: clip.name,
@@ -91,6 +113,7 @@ function toOtioTrack(
         },
       },
     });
+    cursor = startSec + ticksToSeconds(clip.duration);
   }
   return { OTIO_SCHEMA: "Track.1", name, kind, children };
 }
