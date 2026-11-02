@@ -7,8 +7,11 @@ export function ExportPanel() {
   const locale = useEditorStore((s) => s.locale);
   const queue = useEditorStore((s) => s.exportQueue);
   const queueExport = useEditorStore((s) => s.queueExport);
+  const runSequenceExport = useEditorStore((s) => s.runSequenceExport);
+  const exportInterchange = useEditorStore((s) => s.exportInterchange);
+  const interchangePreview = useEditorStore((s) => s.interchangePreview);
   const status = useEditorStore((s) => s.status);
-  const [presetId, setPresetId] = useState("youtube-4k");
+  const [presetId, setPresetId] = useState("webm-av1");
   const [patentOk, setPatentOk] = useState(false);
   const preset = EXPORT_PRESETS.find((p) => p.id === presetId);
 
@@ -37,7 +40,7 @@ export function ExportPanel() {
           ))}
         </div>
       </div>
-      <div className="p-4 space-y-3 text-sm">
+      <div className="p-4 space-y-3 text-sm overflow-auto lum-scroll">
         {preset && (
           <>
             <h2 className="font-display text-2xl">{preset.label}</h2>
@@ -49,7 +52,10 @@ export function ExportPanel() {
               <div>
                 Size: {preset.width}×{preset.height}
               </div>
-              <div>RC: {preset.rateControl}{preset.crf !== undefined ? ` CRF ${preset.crf}` : ""}</div>
+              <div>
+                RC: {preset.rateControl}
+                {preset.crf !== undefined ? ` CRF ${preset.crf}` : ""}
+              </div>
               <div>HW: {preset.hardwareHints.join(", ") || "software"}</div>
             </dl>
             {preset.patentWarning && (
@@ -62,18 +68,54 @@ export function ExportPanel() {
                 <span>{t(locale, "patent.warning")}</span>
               </label>
             )}
-            <button
-              type="button"
-              className="lum-btn-primary"
-              onClick={() =>
-                queueExport(preset.id, `~/Movies/Lumina/${preset.id}.${preset.container}`, patentOk)
-              }
-            >
-              {t(locale, "action.export")} — queue
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="lum-btn-primary"
+                onClick={() =>
+                  queueExport(
+                    preset.id,
+                    `/tmp/lumina-export-${preset.id}.${preset.container === "png-seq" ? "png" : preset.container}`,
+                    patentOk,
+                  )
+                }
+              >
+                Queue preset
+              </button>
+              <button
+                type="button"
+                className="lum-btn"
+                onClick={() => void runSequenceExport("/tmp/lumina-sequence.mp4", true)}
+              >
+                Dry-run sequence
+              </button>
+              <button
+                type="button"
+                className="lum-btn-primary"
+                onClick={() => void runSequenceExport("/tmp/lumina-sequence.mp4", false)}
+              >
+                Export sequence
+              </button>
+            </div>
           </>
         )}
-        <div className="pt-4 border-t border-line">
+        <div className="pt-2 border-t border-line flex flex-wrap gap-2">
+          <button type="button" className="lum-btn" onClick={() => exportInterchange("edl")}>
+            EDL
+          </button>
+          <button type="button" className="lum-btn" onClick={() => exportInterchange("fcpxml")}>
+            FCPXML
+          </button>
+          <button type="button" className="lum-btn" onClick={() => exportInterchange("otio")}>
+            OTIO
+          </button>
+        </div>
+        {interchangePreview && (
+          <pre className="text-[10px] font-mono border border-line p-2 max-h-48 overflow-auto whitespace-pre-wrap">
+            {interchangePreview.slice(0, 4000)}
+          </pre>
+        )}
+        <div className="pt-2 border-t border-line">
           <div className="text-xs uppercase tracking-wide text-muted mb-2">Queue</div>
           {queue.length === 0 && <div className="text-muted text-xs">Empty</div>}
           {queue.map((job) => (

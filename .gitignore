@@ -11,6 +11,7 @@ coverage/
 .cache/
 *.lumina/
 !apps/**/*.lumina/
+.lumina-cache/
 target/
 native/**/target/
 .env

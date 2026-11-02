@@ -8,8 +8,9 @@ import { usePlaybackLoop } from "./hooks/usePlaybackLoop";
 
 export function App() {
   const theme = useEditorStore((s) => s.theme);
-  const addDemoMedia = useEditorStore((s) => s.addDemoMedia);
+  const loadRealDemoMedia = useEditorStore((s) => s.loadRealDemoMedia);
   const project = useEditorStore((s) => s.project);
+  const maybeAutosave = useEditorStore((s) => s.maybeAutosave);
 
   useKeyboardShortcuts();
   usePlaybackLoop();
@@ -19,8 +20,13 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (project.media.length === 0) addDemoMedia();
-  }, [addDemoMedia, project.media.length]);
+    if (project.media.length === 0) void loadRealDemoMedia();
+  }, [loadRealDemoMedia, project.media.length]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => maybeAutosave(), 30_000);
+    return () => window.clearInterval(id);
+  }, [maybeAutosave]);
 
   return (
     <div className="h-full flex flex-col min-h-0">
