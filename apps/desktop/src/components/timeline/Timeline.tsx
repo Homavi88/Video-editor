@@ -38,6 +38,8 @@ export function Timeline() {
   const transitionDurationSec = useEditorStore((s) => s.transitionDurationSec);
   const setTransitionDurationSec = useEditorStore((s) => s.setTransitionDurationSec);
   const setSequenceInOut = useEditorStore((s) => s.setSequenceInOut);
+  const zoomToFit = useEditorStore((s) => s.zoomToFit);
+  const zoomToPlayhead = useEditorStore((s) => s.zoomToPlayhead);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
@@ -144,6 +146,12 @@ export function Timeline() {
             onChange={(e) => setZoom(Number(e.target.value))}
           />
         </label>
+        <button type="button" className="lum-btn" onClick={() => zoomToFit()}>
+          Fit
+        </button>
+        <button type="button" className="lum-btn" onClick={() => zoomToPlayhead()}>
+          ▶︎
+        </button>
         <span className="font-mono text-xs text-accent2">
           {formatTimecode(playheadTicks, Math.round(sequence.frameRate.numerator / sequence.frameRate.denominator))}
         </span>

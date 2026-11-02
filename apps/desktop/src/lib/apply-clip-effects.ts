@@ -52,6 +52,20 @@ function applyOne(
       renderer.applySharpen(amount);
       break;
     }
+    case "builtin.mosaic": {
+      const block = sampleEffectParam(fx.params.blockSize!, time, 12);
+      renderer.applyMosaic(Math.max(2, 128 / Math.max(1, block)));
+      break;
+    }
+    case "builtin.mirror": {
+      renderer.applyMirror(false);
+      break;
+    }
+    case "builtin.noise": {
+      const amount = sampleEffectParam(fx.params.amount!, time, 20) / 100;
+      renderer.applyNoise(amount, Number(time) / 10_000_000);
+      break;
+    }
     case "builtin.color.lut": {
       // Intensity is applied by ProgramMonitor via activeLut; keep stack order marker.
       break;

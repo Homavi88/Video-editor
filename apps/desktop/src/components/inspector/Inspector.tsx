@@ -6,6 +6,8 @@ import {
   createRectMask,
   createEllipseMask,
   maskCoverage,
+  getEffectPreset,
+  sampleEffectParam,
   type MaskShape,
 } from "@lumina/core";
 import { useEditorStore } from "../../store/editor-store";
@@ -27,6 +29,10 @@ export function Inspector() {
   const copiedAttributes = useEditorStore((s) => s.copiedAttributes);
   const floatingInspector = useEditorStore((s) => s.floatingInspector);
   const setFloatingInspector = useEditorStore((s) => s.setFloatingInspector);
+  const setEffectParam = useEditorStore((s) => s.setEffectParam);
+  const addEffectKeyframeAtPlayhead = useEditorStore((s) => s.addEffectKeyframeAtPlayhead);
+  const setEffectEnabled = useEditorStore((s) => s.setEffectEnabled);
+  const playheadTicks = useEditorStore((s) => s.playheadTicks);
   const [mask, setMask] = useState<MaskShape>(() => createRectMask());
   const [proxyStatus, setProxyStatus] = useState<string>("");
   const sequence = requireActiveSequence(project);
@@ -209,11 +215,67 @@ export function Inspector() {
             </div>
 
             <div className="text-muted text-xs uppercase tracking-wide pt-2">Effects</div>
-            {clip.clip.effects.map((fx) => (
-              <div key={fx.id} className="border border-line px-2 py-1">
-                {fx.typeId} {fx.enabled ? "" : "(off)"}
-              </div>
-            ))}
+            {clip.clip.effects.map((fx) => {
+              const preset = getEffectPreset(fx.typeId);
+              return (
+                <div key={fx.id} className="border border-line px-2 py-1.5 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="lum-btn text-[10px]"
+                      onClick={() => setEffectEnabled(fx.id, !fx.enabled)}
+                    >
+                      {fx.enabled ? "On" : "Off"}
+                    </button>
+                    <span className="font-mono text-[11px] truncate">
+                      {preset?.label ?? fx.typeId}
+                    </span>
+                  </div>
+                  {(preset?.params ?? [])
+                    .filter((p) => p.type === "number")
+                    .slice(0, 4)
+                    .map((p) => {
+                      const state = fx.params[p.key];
+                      const value = state
+                        ? sampleEffectParam(state, playheadTicks, Number(p.defaultValue) || 0)
+                        : Number(p.defaultValue) || 0;
+                      const min = p.min ?? 0;
+                      const max = p.max ?? 100;
+                      return (
+                        <div key={p.key} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-[10px] text-muted">
+                            <span>
+                              {p.label}
+                              {state?.mode === "keyframes" ? " · KF" : ""}
+                            </span>
+                            <button
+                              type="button"
+                              className="lum-btn text-[9px] px-1"
+                              onClick={() =>
+                                addEffectKeyframeAtPlayhead(fx.id, p.key, value)
+                              }
+                            >
+                              ◆
+                            </button>
+                          </div>
+                          <input
+                            type="range"
+                            className="w-full"
+                            min={min}
+                            max={max}
+                            step={p.step ?? (max - min) / 100}
+                            value={value}
+                            disabled={!fx.enabled}
+                            onChange={(e) =>
+                              setEffectParam(fx.id, p.key, Number(e.target.value))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
           </div>
         ) : media ? (
           <div className="space-y-2">

@@ -28,6 +28,7 @@ function finishPreviewPass(
     activeLut: import("@lumina/core").Lut3D | null;
     lutStrength: number;
     lutUploadedRef: { current: string | null };
+    compareSplit: boolean;
   },
 ): void {
   if (opts.clip) applyClipEffectsToRenderer(renderer, opts.clip, opts.playheadTicks);
@@ -40,7 +41,7 @@ function finishPreviewPass(
       renderer.setLut3D(opts.activeLut.size, opts.activeLut.data);
       opts.lutUploadedRef.current = key;
     }
-    renderer.applyLut(opts.lutStrength);
+    renderer.applyLut(opts.lutStrength, opts.compareSplit ? 0.5 : 0);
   } else if (opts.lutUploadedRef.current) {
     renderer.clearLut();
     opts.lutUploadedRef.current = null;
@@ -65,6 +66,7 @@ export function ProgramMonitor() {
   const titleOverlay = useEditorStore((s) => s.titleOverlay);
   const activeLut = useEditorStore((s) => s.activeLut);
   const lutStrength = useEditorStore((s) => s.lutStrength);
+  const compareSplit = useEditorStore((s) => s.compareSplit);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
@@ -138,6 +140,7 @@ export function ProgramMonitor() {
           activeLut,
           lutStrength,
           lutUploadedRef,
+          compareSplit,
         });
         if (source instanceof ImageBitmap) source.close();
       });
@@ -158,6 +161,7 @@ export function ProgramMonitor() {
     activeLut,
     lutStrength,
     adjustmentClips.length,
+    compareSplit,
   ]);
 
   // Resync continuous decoder if it drifts from the timeline clock.
@@ -236,6 +240,7 @@ export function ProgramMonitor() {
         activeLut,
         lutStrength,
         lutUploadedRef,
+        compareSplit,
       });
     };
     img.addEventListener("load", onLoad);
@@ -251,6 +256,7 @@ export function ProgramMonitor() {
     activeLut,
     lutStrength,
     adjustmentClips,
+    compareSplit,
   ]);
 
   return (
@@ -266,6 +272,12 @@ export function ProgramMonitor() {
       <div className="flex-1 min-h-0 bg-black/40 relative">
         <canvas ref={canvasRef} className="w-full h-full block" />
         {frameUrl && !playing ? <img ref={imgRef} src={frameUrl} alt="" className="hidden" /> : null}
+        {compareSplit && activeLut ? (
+          <div className="absolute inset-0 pointer-events-none flex text-[10px] text-white/80">
+            <div className="w-1/2 border-r border-white/50 pl-2 pt-1">Before</div>
+            <div className="w-1/2 pl-2 pt-1">After</div>
+          </div>
+        ) : null}
         {titleOverlay ? (
           <div className="absolute inset-x-0 bottom-[18%] text-center pointer-events-none">
             <div

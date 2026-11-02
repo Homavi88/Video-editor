@@ -20,8 +20,11 @@ export function ColorPanel() {
   const loadDemoLut = useEditorStore((s) => s.loadDemoLut);
   const setLutStrength = useEditorStore((s) => s.setLutStrength);
   const setActiveLut = useEditorStore((s) => s.setActiveLut);
+  const loadCubeLutText = useEditorStore((s) => s.loadCubeLutText);
   const addEffectToSelected = useEditorStore((s) => s.addEffectToSelected);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const compareSplit = useEditorStore((s) => s.compareSplit);
+  const setCompareSplit = useEditorStore((s) => s.setCompareSplit);
 
   const preview = useMemo(() => {
     const lgg = {
@@ -67,6 +70,20 @@ export function ColorPanel() {
           <button type="button" className="lum-btn-primary" onClick={() => loadDemoLut()}>
             Load warm demo LUT
           </button>
+          <label className="lum-btn cursor-pointer">
+            Import .cube
+            <input
+              type="file"
+              accept=".cube,text/plain"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                void file.text().then((text) => loadCubeLutText(text));
+                e.target.value = "";
+              }}
+            />
+          </label>
           <button
             type="button"
             className="lum-btn"
@@ -85,6 +102,13 @@ export function ColorPanel() {
             }}
           >
             Add LUT FX to clip
+          </button>
+          <button
+            type="button"
+            className={`lum-btn ${compareSplit ? "border-accent text-accent" : ""}`}
+            onClick={() => setCompareSplit(!compareSplit)}
+          >
+            Before/After
           </button>
         </div>
         <div className="text-[11px] text-muted">

@@ -226,11 +226,61 @@ in vec2 v_uv;
 uniform sampler2D u_tex;
 uniform sampler3D u_lut;
 uniform float u_strength;
+uniform float u_split; // 0 = full frame; >0 = apply LUT only for v_uv.x >= u_split
 out vec4 outColor;
 void main() {
   vec4 c = texture(u_tex, v_uv);
+  float s = clamp(u_strength, 0.0, 1.0);
+  if (u_split > 0.0 && v_uv.x < u_split) {
+    outColor = c;
+    return;
+  }
   vec3 mapped = texture(u_lut, clamp(c.rgb, 0.0, 1.0)).rgb;
-  outColor = vec4(mix(c.rgb, mapped, clamp(u_strength, 0.0, 1.0)), c.a);
+  outColor = vec4(mix(c.rgb, mapped, s), c.a);
+}
+`;
+
+export const MOSAIC_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_block;
+out vec4 outColor;
+void main() {
+  float b = max(u_block, 1.0);
+  vec2 cell = floor(v_uv * b) / b + 0.5 / b;
+  outColor = texture(u_tex, cell);
+}
+`;
+
+export const MIRROR_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_axis; // 0 = horizontal flip, 1 = vertical
+out vec4 outColor;
+void main() {
+  vec2 uv = v_uv;
+  if (u_axis < 0.5) uv.x = 1.0 - uv.x;
+  else uv.y = 1.0 - uv.y;
+  outColor = texture(u_tex, uv);
+}
+`;
+
+export const NOISE_FRAG = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_amount;
+uniform float u_time;
+out vec4 outColor;
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float n = hash(v_uv * 800.0 + u_time) - 0.5;
+  outColor = vec4(clamp(c.rgb + n * u_amount, 0.0, 1.0), c.a);
 }
 `;
 
@@ -245,5 +295,8 @@ export const EFFECT_SHADERS: Record<string, string> = {
   "builtin.blur.gaussian": GAUSSIAN_BLUR_FRAG,
   "builtin.color.lgg": COLOR_LGG_FRAG,
   "builtin.vignette": VIGNETTE_FRAG,
+  "builtin.mosaic": MOSAIC_FRAG,
+  "builtin.mirror": MIRROR_FRAG,
+  "builtin.noise": NOISE_FRAG,
   blit: BLIT_FRAG,
 };

@@ -13,6 +13,9 @@ import {
   GAUSSIAN_BLUR_FRAG,
   LUT3D_FRAG,
   MASK_FRAG,
+  MIRROR_FRAG,
+  MOSAIC_FRAG,
+  NOISE_FRAG,
   SHARPEN_FRAG,
   VIGNETTE_FRAG,
   WIPE_LEFT_FRAG,
@@ -38,6 +41,9 @@ export class WebGLPreviewRenderer {
   private readonly grain: Program;
   private readonly sharpen: Program;
   private readonly lut: Program;
+  private readonly mosaic: Program;
+  private readonly mirror: Program;
+  private readonly noise: Program;
   private readonly quad: WebGLBuffer;
   private readonly texture: WebGLTexture;
   private lutTexture: WebGLTexture | null = null;
@@ -64,6 +70,9 @@ export class WebGLPreviewRenderer {
     this.grain = createProgram(gl, FULLSCREEN_VERT, FILM_GRAIN_FRAG);
     this.sharpen = createProgram(gl, FULLSCREEN_VERT, SHARPEN_FRAG);
     this.lut = createProgram(gl, FULLSCREEN_VERT, LUT3D_FRAG);
+    this.mosaic = createProgram(gl, FULLSCREEN_VERT, MOSAIC_FRAG);
+    this.mirror = createProgram(gl, FULLSCREEN_VERT, MIRROR_FRAG);
+    this.noise = createProgram(gl, FULLSCREEN_VERT, NOISE_FRAG);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -192,7 +201,7 @@ export class WebGLPreviewRenderer {
     this.lutSize = 0;
   }
 
-  applyLut(strength = 1): void {
+  applyLut(strength = 1, splitX = 0): void {
     if (!this.lutTexture || this.lutSize < 2) return;
     const gl = this.gl;
     this.drawTexture(this.texture, this.lut, (p) => {
@@ -200,7 +209,30 @@ export class WebGLPreviewRenderer {
       gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
       gl.uniform1i(p.uniforms.u_lut!, 1);
       gl.uniform1f(p.uniforms.u_strength!, strength);
+      if (p.uniforms.u_split) gl.uniform1f(p.uniforms.u_split, splitX);
       gl.activeTexture(gl.TEXTURE0);
+    });
+  }
+
+  applyMosaic(blockSize: number): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.mosaic, (p) => {
+      gl.uniform1f(p.uniforms.u_block!, Math.max(2, blockSize));
+    });
+  }
+
+  applyMirror(vertical = false): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.mirror, (p) => {
+      gl.uniform1f(p.uniforms.u_axis!, vertical ? 1 : 0);
+    });
+  }
+
+  applyNoise(amount: number, timeSeconds = 0): void {
+    const gl = this.gl;
+    this.drawTexture(this.texture, this.noise, (p) => {
+      gl.uniform1f(p.uniforms.u_amount!, Math.max(0, amount));
+      gl.uniform1f(p.uniforms.u_time!, timeSeconds);
     });
   }
 
@@ -340,6 +372,9 @@ function createProgram(gl: WebGL2RenderingContext, vertSrc: string, fragSrc: str
       u_time: gl.getUniformLocation(program, "u_time"),
       u_lut: gl.getUniformLocation(program, "u_lut"),
       u_strength: gl.getUniformLocation(program, "u_strength"),
+      u_split: gl.getUniformLocation(program, "u_split"),
+      u_block: gl.getUniformLocation(program, "u_block"),
+      u_axis: gl.getUniformLocation(program, "u_axis"),
     },
   };
 }

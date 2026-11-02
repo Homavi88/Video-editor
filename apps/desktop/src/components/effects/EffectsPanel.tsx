@@ -9,6 +9,9 @@ const LIVE_FX = new Set([
   "builtin.filmGrain",
   "builtin.sharpen",
   "builtin.color.lut",
+  "builtin.mosaic",
+  "builtin.mirror",
+  "builtin.noise",
 ]);
 
 export function EffectsPanel() {

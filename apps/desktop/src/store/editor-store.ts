@@ -24,6 +24,9 @@ import {
   PlaceAdjustmentClipCommand,
   SetSequenceInOutCommand,
   PasteAttributesCommand,
+  SetEffectParamCommand,
+  AddEffectKeyframeCommand,
+  SetEffectEnabledCommand,
   extractClipAttributes,
   buildMulticamAngles,
   placeMulticamAngles,
@@ -48,6 +51,7 @@ import {
   exportAafLite,
   classifyMediaKind,
   createWarmDemoLut,
+  parseCubeLut,
   type Project,
   type MediaItem,
   type EditTool,
@@ -132,6 +136,14 @@ export interface EditorState {
   setFloatingInspector: (v: boolean) => void;
   transitionDurationSec: number;
   setTransitionDurationSec: (v: number) => void;
+  setEffectParam: (effectId: string, paramKey: string, value: number) => void;
+  addEffectKeyframeAtPlayhead: (effectId: string, paramKey: string, value: number) => void;
+  setEffectEnabled: (effectId: string, enabled: boolean) => void;
+  loadCubeLutText: (text: string) => void;
+  zoomToFit: () => void;
+  zoomToPlayhead: () => void;
+  compareSplit: boolean;
+  setCompareSplit: (v: boolean) => void;
   setTheme: (theme: ThemeMode) => void;
   setWorkspace: (workspace: WorkspaceId) => void;
   setTool: (tool: EditTool) => void;
@@ -214,13 +226,80 @@ export const useEditorStore = create<EditorState>((set, get) => {
     sourceOutSec: 5,
     floatingInspector: false,
     transitionDurationSec: 1,
+    compareSplit: false,
 
     setLocale: (locale) => set({ locale }),
     setActiveLut: (lut) => set({ activeLut: lut }),
     setLutStrength: (v) => set({ lutStrength: Math.min(1, Math.max(0, v)) }),
     loadDemoLut: () => set({ activeLut: createWarmDemoLut(17), status: "Loaded warm demo LUT" }),
+    loadCubeLutText: (text) => {
+      try {
+        const lut = parseCubeLut(text);
+        set({ activeLut: lut, status: `Loaded LUT ${lut.title} (${lut.size}³)` });
+      } catch (err) {
+        set({ status: err instanceof Error ? err.message : String(err) });
+      }
+    },
     setFloatingInspector: (v) => set({ floatingInspector: v }),
     setTransitionDurationSec: (v) => set({ transitionDurationSec: Math.max(0.1, v) }),
+    setCompareSplit: (v) => set({ compareSplit: v }),
+    zoomToFit: () => {
+      const sequence = requireActiveSequence(get().project);
+      const ends = [...sequence.videoTracks, ...sequence.audioTracks].flatMap((tr) =>
+        tr.clips.map((c) => ticksToSeconds(clipEnd(c))),
+      );
+      const dur = Math.max(8, ...ends, 1);
+      // Fit ~duration into ~900px effective timeline width.
+      const zoom = Math.min(300, Math.max(20, Math.floor(900 / dur)));
+      set({ zoom, status: `Zoom to fit (${zoom}px/s)` });
+    },
+    zoomToPlayhead: () => {
+      set({ zoom: Math.min(300, Math.max(get().zoom, 160)), status: "Zoom to playhead" });
+    },
+    setEffectParam: (effectId, paramKey, value) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(
+          new SetEffectParamCommand(track.id, selectedClipId, effectId, paramKey, value),
+        );
+        set(bump(sync(history), revision));
+        return;
+      }
+    },
+    addEffectKeyframeAtPlayhead: (effectId, paramKey, value) => {
+      const { history, project, selectedClipId, playheadTicks, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(
+          new AddEffectKeyframeCommand(
+            track.id,
+            selectedClipId,
+            effectId,
+            paramKey,
+            playheadTicks,
+            value,
+          ),
+        );
+        set(bump(sync(history), revision, `KF ${paramKey}`));
+        return;
+      }
+    },
+    setEffectEnabled: (effectId, enabled) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(new SetEffectEnabledCommand(track.id, selectedClipId, effectId, enabled));
+        set(bump(sync(history), revision, enabled ? "FX on" : "FX off"));
+        return;
+      }
+    },
     setSourceInOut: (mark, seconds) => {
       if (mark === "in") set({ sourceInSec: Math.max(0, seconds) });
       else set({ sourceOutSec: Math.max(get().sourceInSec + 0.04, seconds) });
