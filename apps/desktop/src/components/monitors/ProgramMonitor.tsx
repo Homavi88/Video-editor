@@ -9,11 +9,15 @@ import {
   maskCoverage,
 } from "@lumina/core";
 import { formatTimecode, useEditorStore } from "../../store/editor-store";
-import { fetchFrameObjectUrl, isFileBacked } from "../../lib/media-api";
+import { isFileBacked } from "../../lib/media-api";
+import { getCachedFrame, prefetchFrames, quantizeTime } from "../../lib/frame-cache";
+
+const PREVIEW_FPS = 12;
 
 export function ProgramMonitor() {
   const locale = useEditorStore((s) => s.locale);
   const playheadTicks = useEditorStore((s) => s.playheadTicks);
+  const playing = useEditorStore((s) => s.playing);
   const project = useEditorStore((s) => s.project);
   const revision = useEditorStore((s) => s.revision);
   const previewMask = useEditorStore((s) => s.previewMask);
@@ -21,10 +25,14 @@ export function ProgramMonitor() {
   const imgRef = useRef<HTMLImageElement>(null);
   const rendererRef = useRef<WebGLPreviewRenderer | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const lastKeyRef = useRef<string>("");
   const sequence = requireActiveSequence(project);
   const fps = sequence.frameRate.numerator / sequence.frameRate.denominator;
 
   const active = findActiveVideo(project, playheadTicks);
+  const sourceSec = active ? ticksToSeconds(active.sourceTime) : 0;
+  const quantized = quantizeTime(sourceSec, PREVIEW_FPS);
+  const frameKey = active ? `${active.mediaPath}|${quantized}` : "";
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,26 +49,32 @@ export function ProgramMonitor() {
 
   useEffect(() => {
     let cancelled = false;
-    let objectUrl: string | null = null;
 
     const run = async () => {
       if (active && isFileBacked(active.mediaPath)) {
-        const url = await fetchFrameObjectUrl(
-          active.mediaPath,
-          ticksToSeconds(active.sourceTime),
-          960,
-          540,
-        );
-        if (cancelled) {
-          if (url) URL.revokeObjectURL(url);
+        if (frameKey === lastKeyRef.current && frameUrl) {
+          if (playing) {
+            prefetchFrames(active.mediaPath, quantized, 4, 960, 540, PREVIEW_FPS);
+          }
           return;
         }
-        if (frameUrl) URL.revokeObjectURL(frameUrl);
-        objectUrl = url;
+        const url = await getCachedFrame(
+          active.mediaPath,
+          quantized,
+          960,
+          540,
+          PREVIEW_FPS,
+        );
+        if (cancelled) return;
+        if (!url) return;
+        lastKeyRef.current = frameKey;
         setFrameUrl(url);
+        if (playing) {
+          prefetchFrames(active.mediaPath, quantized, 4, 960, 540, PREVIEW_FPS);
+        }
         return;
       }
-      // Fallback: procedural bars
+      lastKeyRef.current = "";
       setFrameUrl(null);
       const renderer = rendererRef.current;
       const canvas = canvasRef.current;
@@ -77,10 +91,9 @@ export function ProgramMonitor() {
     void run();
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playheadTicks, revision, active?.mediaPath, active?.sourceTime]);
+  }, [frameKey, revision, playing, playheadTicks]);
 
   useEffect(() => {
     if (!frameUrl || !imgRef.current || !canvasRef.current || !rendererRef.current) return;
@@ -125,13 +138,12 @@ export function ProgramMonitor() {
         <span className="font-mono text-xs text-accent2">
           {formatTimecode(playheadTicks, Math.round(fps))}
           {active ? ` · ${active.name}` : " · black"}
+          {playing ? " · ▶" : ""}
         </span>
       </header>
       <div className="flex-1 min-h-0 bg-black/40 relative">
         <canvas ref={canvasRef} className="w-full h-full block" />
-        {frameUrl ? (
-          <img ref={imgRef} src={frameUrl} alt="" className="hidden" />
-        ) : null}
+        {frameUrl ? <img ref={imgRef} src={frameUrl} alt="" className="hidden" /> : null}
       </div>
     </section>
   );

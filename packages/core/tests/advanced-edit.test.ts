@@ -7,9 +7,12 @@ import { PlaceClipCommand } from "../src/commands/timeline-commands.js";
 import {
   RippleTrimCommand,
   SlipEditCommand,
+  SlideEditCommand,
+  ApplyTransitionCommand,
   SetClipSpeedCommand,
   AddMarkerCommand,
 } from "../src/commands/advanced-edit.js";
+import { clipEnd } from "../src/model/clip.js";
 import { secondsToTicks } from "../src/util/time.js";
 import { createRectMask, pointInMask } from "../src/model/mask.js";
 import { exportEdl } from "../src/interchange/edl.js";
@@ -58,6 +61,61 @@ describe("advanced editing + interchange", () => {
     expect(track.clips[0]!.speed).toBe(2);
     history.push(new AddMarkerCommand(secondsToTicks(1), "Hit"));
     expect(requireActiveSequence(history.current).markers).toHaveLength(1);
+  });
+
+  it("slides neighbors and applies crossfade marker", () => {
+    let project = createProject({ name: "Slide" });
+    const media = createMediaItem({
+      kind: "video",
+      name: "b.mp4",
+      path: "/tmp/b.mp4",
+      metadata: {
+        duration: secondsToTicks(30),
+        hasVideo: true,
+        hasAudio: false,
+        width: 1280,
+        height: 720,
+      },
+    });
+    project = { ...project, media: [media] };
+    const seq = requireActiveSequence(project);
+    const trackId = seq.videoTracks[seq.videoTracks.length - 1]!.id;
+    const history = new HistoryStack(project);
+    const a = createClip({
+      kind: "video",
+      source: { type: "media", mediaId: media.id },
+      start: 0n,
+      duration: secondsToTicks(4),
+      name: "A",
+    });
+    const b = createClip({
+      kind: "video",
+      source: { type: "media", mediaId: media.id },
+      start: secondsToTicks(4),
+      duration: secondsToTicks(4),
+      name: "B",
+    });
+    const c = createClip({
+      kind: "video",
+      source: { type: "media", mediaId: media.id },
+      start: secondsToTicks(8),
+      duration: secondsToTicks(4),
+      name: "C",
+    });
+    history.push(new PlaceClipCommand(trackId, a, "overwrite"));
+    history.push(new PlaceClipCommand(trackId, b, "overwrite"));
+    history.push(new PlaceClipCommand(trackId, c, "overwrite"));
+    history.push(new SlideEditCommand(trackId, b.id, secondsToTicks(5)));
+    const track = requireActiveSequence(history.current).videoTracks.find((t) => t.id === trackId)!;
+    const mid = track.clips.find((x) => x.id === b.id)!;
+    expect(mid.start).toBe(secondsToTicks(5));
+    const left = track.clips.find((x) => x.id === a.id)!;
+    expect(clipEnd(left)).toBe(secondsToTicks(5));
+    history.push(new ApplyTransitionCommand(trackId, a.id, "crossDissolve", "out"));
+    const left2 = requireActiveSequence(history.current)
+      .videoTracks.find((t) => t.id === trackId)!
+      .clips.find((x) => x.id === a.id)!;
+    expect(left2.transitionOutId).toBe("crossDissolve");
   });
 
   it("masks, scopes, eq, hotkeys, autosave, edl/otio", () => {

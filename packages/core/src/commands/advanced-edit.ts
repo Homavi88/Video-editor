@@ -199,15 +199,83 @@ export class SlideEditCommand implements Command {
     this.before = sequence;
     const track = findTrack(sequence, this.trackId);
     const clip = findClip(track, this.clipId);
-    const delta = this.newStart - clip.start;
-    const next: Clip = { ...clip, start: this.newStart < 0n ? 0n : this.newStart };
-    const clips = track.clips.map((c) => (c.id === clip.id ? next : c));
-    void delta;
+    const sorted = [...track.clips].sort((a, b) => (a.start < b.start ? -1 : 1));
+    const idx = sorted.findIndex((c) => c.id === clip.id);
+    if (idx < 0) throw new Error("clip missing");
+    const newStart = this.newStart < 0n ? 0n : this.newStart;
+    const next: Clip = { ...clip, start: newStart };
+    const clips = sorted.map((c, i) => {
+      if (i === idx) return next;
+      if (i === idx - 1) {
+        // Trim left neighbor out-point to stay adjacent to slid clip.
+        const newDur = newStart - c.start;
+        if (newDur <= 0n) return c;
+        return {
+          ...c,
+          duration: newDur,
+          outPoint: c.inPoint + scaleSource(c, newDur),
+        };
+      }
+      if (i === idx + 1) {
+        const newRightStart = newStart + clip.duration;
+        const delta = newRightStart - c.start;
+        const newDur = c.duration - delta;
+        if (newDur <= 0n) return c;
+        return {
+          ...c,
+          start: newRightStart,
+          duration: newDur,
+          inPoint: c.inPoint + scaleSource(c, delta),
+        };
+      }
+      return c;
+    });
     return updateSequence(project, mapTrack(sequence, this.trackId, () => ({ ...track, clips })));
   }
 
   undo(project: Project): Project {
     if (!this.before) throw new Error("SlideEditCommand.undo before execute");
+    return updateSequence(project, this.before);
+  }
+}
+
+/**
+ * Marks a crossfade (or other catalog transition) on the outgoing edge of a clip.
+ * Export uses `transitionOutId` as a preset id (e.g. "crossDissolve").
+ */
+export class ApplyTransitionCommand implements Command {
+  readonly type = "timeline.applyTransition";
+  readonly label = "Apply Transition";
+  private before: Sequence | null = null;
+
+  constructor(
+    private readonly trackId: string,
+    private readonly clipId: string,
+    private readonly presetId: string,
+    private readonly edge: "in" | "out" = "out",
+  ) {}
+
+  execute(project: Project): Project {
+    const sequence = requireActiveSequence(project);
+    this.before = sequence;
+    const track = findTrack(sequence, this.trackId);
+    const clip = findClip(track, this.clipId);
+    const tid = this.presetId as import("../util/id.js").TransitionId;
+    const next: Clip =
+      this.edge === "out"
+        ? { ...clip, transitionOutId: tid }
+        : { ...clip, transitionInId: tid };
+    return updateSequence(
+      project,
+      mapTrack(sequence, this.trackId, () => ({
+        ...track,
+        clips: track.clips.map((c) => (c.id === clip.id ? next : c)),
+      })),
+    );
+  }
+
+  undo(project: Project): Project {
+    if (!this.before) throw new Error("ApplyTransitionCommand.undo before execute");
     return updateSequence(project, this.before);
   }
 }

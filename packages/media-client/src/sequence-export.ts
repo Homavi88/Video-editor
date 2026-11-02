@@ -128,6 +128,28 @@ function buildConcatCommand(input: SequenceExportInput): BuiltExportCommand {
     filterParts.push(`color=c=black:s=${width}x${height}:r=${fps}:d=${dur}[vout]`);
   } else if (vLabels.length === 1) {
     filterParts.push(`${vLabels[0]}null[vout]`);
+  } else if (hasAnyCrossfade(vClips)) {
+    // Chain xfade for clips that mark transitionOutId (preset id, e.g. crossDissolve).
+    let current = vLabels[0]!;
+    let currentDur = ticksToSeconds(vClips[0]!.clip.duration);
+    for (let i = 1; i < vLabels.length; i += 1) {
+      const prev = vClips[i - 1]!.clip;
+      const nextLabel = vLabels[i]!;
+      const nextDur = ticksToSeconds(vClips[i]!.clip.duration);
+      const fade = prev.transitionOutId ? Math.min(1, currentDur / 2, nextDur / 2) : 0;
+      const out = i === vLabels.length - 1 ? "vout" : `xf${i}`;
+      if (fade > 0.01) {
+        const offset = Math.max(0, currentDur - fade);
+        filterParts.push(
+          `${current}${nextLabel}xfade=transition=fade:duration=${fade.toFixed(3)}:offset=${offset.toFixed(3)}[${out}]`,
+        );
+        currentDur = currentDur + nextDur - fade;
+      } else {
+        filterParts.push(`${current}${nextLabel}concat=n=2:v=1:a=0[${out}]`);
+        currentDur = currentDur + nextDur;
+      }
+      current = `[${out}]`;
+    }
   } else {
     filterParts.push(`${vLabels.join("")}concat=n=${vLabels.length}:v=1:a=0[vout]`);
   }
@@ -338,4 +360,8 @@ function resolveMedia(clip: Clip, mediaById: Map<string, MediaItem>): MediaItem 
 
 function isFilePath(p: string): boolean {
   return !p.startsWith("demo://") && (p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p));
+}
+
+function hasAnyCrossfade(clips: Array<{ clip: Clip }>): boolean {
+  return clips.some(({ clip }) => Boolean(clip.transitionOutId));
 }

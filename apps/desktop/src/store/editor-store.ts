@@ -11,6 +11,11 @@ import {
   SetTrackFlagsCommand,
   AddMarkerCommand,
   SetClipSpeedCommand,
+  RippleTrimCommand,
+  RollEditCommand,
+  SlipEditCommand,
+  SlideEditCommand,
+  ApplyTransitionCommand,
   createProject,
   createClip,
   createMediaItem,
@@ -20,6 +25,7 @@ import {
   ticksToSeconds,
   snapTime,
   collectSnapTargets,
+  clipEnd,
   FRAME_RATES,
   createAutosaveSnapshot,
   shouldAutosave,
@@ -92,10 +98,16 @@ export interface EditorState {
   addMarkerAtPlayhead: () => void;
   setSelectedSpeed: (speed: number) => void;
   queueExport: (presetId: string, outputPath: string, patentAcknowledged: boolean) => void;
+  processExportQueue: () => Promise<void>;
   runSequenceExport: (outputPath: string, dryRun?: boolean) => Promise<void>;
   exportInterchange: (kind: "edl" | "fcpxml" | "otio") => void;
   maybeAutosave: () => void;
   tickPlayback: (dtSeconds: number) => void;
+  rippleTrimSelected: (edge: "in" | "out", newEdgeTime: bigint) => void;
+  rollSelectedEdit: (newEditTime: bigint) => void;
+  slipSelected: (deltaSourceTicks: bigint) => void;
+  slideSelected: (newStart: bigint) => void;
+  applyDefaultTransition: () => void;
 }
 
 function sync(history: HistoryStack): Project {
@@ -418,8 +430,158 @@ export const useEditorStore = create<EditorState>((set, get) => {
           exportQueue: [...get().exportQueue, job],
           status: `Queued export ${presetId}`,
         });
+        void get().processExportQueue();
       } catch (err) {
         set({ status: err instanceof Error ? err.message : String(err) });
+      }
+    },
+
+    processExportQueue: async () => {
+      const running = get().exportQueue.some((j) => j.status === "running");
+      if (running) return;
+      const next = get().exportQueue.find((j) => j.status === "queued");
+      if (!next) return;
+
+      const mark = (id: string, patch: Partial<ExportJob>) => {
+        set({
+          exportQueue: get().exportQueue.map((j) => (j.id === id ? { ...j, ...patch } : j)),
+        });
+      };
+
+      mark(next.id, { status: "running", progress: 0.05, error: null });
+      set({ status: `Exporting ${next.presetId}…` });
+      try {
+        const { project } = get();
+        const sequence = requireActiveSequence(project);
+        const activeVideoTracks = sequence.videoTracks.filter(
+          (t) => !t.muted && !t.hidden && t.clips.some((c) => c.enabled),
+        ).length;
+        const mode = activeVideoTracks > 1 ? "overlay" : "concat";
+        mark(next.id, { progress: 0.35 });
+        const result = await exportSequenceApi({
+          sequence,
+          media: project.media,
+          outputPath: next.outputPath,
+          dryRun: false,
+          mode,
+        });
+        if (!result.ok) {
+          mark(next.id, {
+            status: "failed",
+            progress: 1,
+            error: result.error ?? "Export failed",
+          });
+          set({ status: result.error ?? "Export failed" });
+        } else {
+          mark(next.id, { status: "completed", progress: 1, etaSeconds: 0 });
+          set({
+            status: `Queue done [${result.encoder ?? "libx264"}] → ${next.outputPath}`,
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        mark(next.id, { status: "failed", progress: 1, error: msg });
+        set({ status: msg });
+      }
+      // Drain remaining queued jobs sequentially.
+      void get().processExportQueue();
+    },
+
+    rippleTrimSelected: (edge, newEdgeTime) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        try {
+          history.push(new RippleTrimCommand(track.id, selectedClipId, edge, newEdgeTime));
+          set(bump(sync(history), revision, `Ripple ${edge}`));
+        } catch (err) {
+          set({ status: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+    },
+
+    rollSelectedEdit: (newEditTime) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        const sorted = [...track.clips].sort((a, b) => (a.start < b.start ? -1 : 1));
+        const idx = sorted.findIndex((c) => c.id === selectedClipId);
+        if (idx < 0) continue;
+        const left = sorted[idx]!;
+        const right = sorted[idx + 1];
+        // Prefer roll at out-point of selected when a right neighbor is adjacent.
+        if (right && clipEnd(left) === right.start) {
+          try {
+            history.push(new RollEditCommand(track.id, left.id, right.id, newEditTime));
+            set(bump(sync(history), revision, "Roll"));
+          } catch (err) {
+            set({ status: err instanceof Error ? err.message : String(err) });
+          }
+          return;
+        }
+        const prev = sorted[idx - 1];
+        if (prev && clipEnd(prev) === left.start) {
+          try {
+            history.push(new RollEditCommand(track.id, prev.id, left.id, newEditTime));
+            set(bump(sync(history), revision, "Roll"));
+          } catch (err) {
+            set({ status: err instanceof Error ? err.message : String(err) });
+          }
+          return;
+        }
+        set({ status: "Roll needs an adjacent edit point" });
+        return;
+      }
+    },
+
+    slipSelected: (deltaSourceTicks) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        try {
+          history.push(new SlipEditCommand(track.id, selectedClipId, deltaSourceTicks));
+          set(bump(sync(history), revision, "Slip"));
+        } catch (err) {
+          set({ status: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+    },
+
+    slideSelected: (newStart) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        try {
+          history.push(new SlideEditCommand(track.id, selectedClipId, newStart));
+          set(bump(sync(history), revision, "Slide"));
+        } catch (err) {
+          set({ status: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+    },
+
+    applyDefaultTransition: () => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) {
+        set({ status: "Select a clip to apply Cross Dissolve" });
+        return;
+      }
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (!track.clips.some((c) => c.id === selectedClipId)) continue;
+        history.push(new ApplyTransitionCommand(track.id, selectedClipId, "crossDissolve", "out"));
+        set(bump(sync(history), revision, "Cross Dissolve on out"));
+        return;
       }
     },
 

@@ -140,6 +140,12 @@ export function ExportPanel() {
             <div key={job.id} className="border border-line px-2 py-1.5 mb-1 font-mono text-xs">
               {job.presetId} · {job.status} · {(job.progress * 100).toFixed(0)}%
               <div className="text-muted truncate">{job.outputPath}</div>
+              {job.error ? <div className="text-accent2">{job.error}</div> : null}
+              {job.status === "running" ? (
+                <div className="mt-1 h-1 bg-line">
+                  <div className="h-full bg-accent" style={{ width: `${job.progress * 100}%` }} />
+                </div>
+              ) : null}
             </div>
           ))}
           <div className="text-xs text-muted mt-2">{status}</div>

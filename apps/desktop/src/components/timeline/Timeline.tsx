@@ -26,6 +26,12 @@ export function Timeline() {
   const dropMediaOnTimeline = useEditorStore((s) => s.dropMediaOnTimeline);
   const moveSelected = useEditorStore((s) => s.moveSelected);
   const splitAtPlayhead = useEditorStore((s) => s.splitAtPlayhead);
+  const rippleTrimSelected = useEditorStore((s) => s.rippleTrimSelected);
+  const rollSelectedEdit = useEditorStore((s) => s.rollSelectedEdit);
+  const slipSelected = useEditorStore((s) => s.slipSelected);
+  const slideSelected = useEditorStore((s) => s.slideSelected);
+  const applyDefaultTransition = useEditorStore((s) => s.applyDefaultTransition);
+  const trimSelected = useEditorStore((s) => s.trimSelected);
   const sequence = requireActiveSequence(project);
   const pxPerSecond = zoom;
   const tracks = useMemo(
@@ -74,6 +80,9 @@ export function Timeline() {
         </button>
         <button type="button" className="lum-btn" onClick={() => splitAtPlayhead()}>
           {t(locale, "action.split")}
+        </button>
+        <button type="button" className="lum-btn" onClick={() => applyDefaultTransition()}>
+          Dissolve
         </button>
         <button
           type="button"
@@ -152,14 +161,17 @@ export function Timeline() {
                     source.type === "media"
                       ? project.media.find((m) => m.id === source.mediaId)?.path
                       : undefined;
+                  const hasDissolve = Boolean(clip.transitionOutId);
                   return (
                     <div
                       key={clip.id}
                       role="button"
                       tabIndex={0}
-                      className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden cursor-grab border ${
+                      className={`absolute top-1 bottom-1 px-1.5 text-[11px] overflow-hidden border ${
                         track.kind === "audio" ? "bg-audio/70 border-audio" : "bg-clip/70 border-clip"
-                      } ${selected ? "ring-2 ring-accent2" : ""}`}
+                      } ${selected ? "ring-2 ring-accent2" : ""} ${
+                        tool === "select" ? "cursor-grab" : "cursor-ew-resize"
+                      }`}
                       style={{ left, width }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -170,17 +182,70 @@ export function Timeline() {
                         }
                       }}
                       onPointerDown={(e) => {
-                        if (tool !== "select") return;
+                        e.stopPropagation();
                         selectClip(clip.id);
                         const origin = ticksFromClientX(e.clientX);
                         const start0 = clip.start;
+                        const end0 = clipEnd(clip);
+                        const edgeZone = secondsToTicks(8 / pxPerSecond);
+                        const nearIn = origin - clip.start < edgeZone;
+                        const nearOut = end0 - origin < edgeZone;
+                        let last = origin;
+
+                        if (tool === "razor") return;
+
                         const onMove = (ev: PointerEvent) => {
                           const now = ticksFromClientX(ev.clientX);
-                          moveSelected(start0 + (now - origin));
+                          last = now;
+                          // Live preview only for select-move (coalesced enough for scrubbing).
+                          if (tool === "select" && !nearIn && !nearOut) {
+                            moveSelected(start0 + (now - origin));
+                          }
                         };
                         const onUp = () => {
                           window.removeEventListener("pointermove", onMove);
                           window.removeEventListener("pointerup", onUp);
+                          const delta = last - origin;
+                          if (delta === 0n) return;
+                          if (tool === "select") {
+                            if (nearIn) {
+                              const newStart = start0 + delta < 0n ? 0n : start0 + delta;
+                              const newDur = end0 - newStart;
+                              if (newDur > 0n) {
+                                trimSelected({
+                                  start: newStart,
+                                  duration: newDur,
+                                  inPoint: clip.inPoint + delta,
+                                });
+                              }
+                            } else if (nearOut) {
+                              const newEnd = end0 + delta;
+                              if (newEnd > start0) {
+                                trimSelected({
+                                  duration: newEnd - start0,
+                                  outPoint: clip.outPoint + delta,
+                                });
+                              }
+                            }
+                            // move already applied live
+                            return;
+                          }
+                          if (tool === "ripple") {
+                            const edge = nearIn ? "in" : "out";
+                            rippleTrimSelected(edge, edge === "in" ? start0 + delta : end0 + delta);
+                            return;
+                          }
+                          if (tool === "roll") {
+                            rollSelectedEdit(nearIn ? start0 + delta : end0 + delta);
+                            return;
+                          }
+                          if (tool === "slip") {
+                            slipSelected(delta);
+                            return;
+                          }
+                          if (tool === "slide") {
+                            slideSelected(start0 + delta);
+                          }
                         };
                         window.addEventListener("pointermove", onMove);
                         window.addEventListener("pointerup", onUp);
@@ -196,6 +261,9 @@ export function Timeline() {
                         />
                       ) : null}
                       <div className="truncate font-medium relative z-10 drop-shadow">{clip.name}</div>
+                      {hasDissolve ? (
+                        <div className="absolute right-0 top-0 bottom-0 w-3 bg-accent2/50 pointer-events-none" title="Cross Dissolve" />
+                      ) : null}
                     </div>
                   );
                 })}
