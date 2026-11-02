@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Real ffmpeg media pipeline in Vite: `/api/probe`, `/api/frame`, `/api/demo/ensure`, `/api/export`.
+- Program/Source monitors pull PNG frames for file-backed clips (fallback color bars).
+- Sequence export via ffmpeg filter_complex + dry-run; EDL / FCPXML / OTIO interchange.
+- Advanced edit commands: ripple trim, roll, slip, slide, speed, link, markers.
+- Mask model, CPU scopes (waveform/parade/histogram/vectorscope), audio DSP (EQ/comp/reverb).
+- Autosave snapshots + hotkey presets (Lumina/Premiere/FCP/Resolve).
+- `scripts/e2e-smoke.mjs` against running Vite server.
+
 #### Stage 0 — Architecture
 - Product name **Lumina**, stack Variant A documented in `ARCHITECTURE.md`.
 - `@lumina/core` domain model, command history, project.json, render-graph planner.

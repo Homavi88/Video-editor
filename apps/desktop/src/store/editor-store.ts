@@ -9,6 +9,8 @@ import {
   TrimClipCommand,
   ExtractClipCommand,
   SetTrackFlagsCommand,
+  AddMarkerCommand,
+  SetClipSpeedCommand,
   createProject,
   createClip,
   createMediaItem,
@@ -19,13 +21,22 @@ import {
   snapTime,
   collectSnapTargets,
   FRAME_RATES,
+  createAutosaveSnapshot,
+  shouldAutosave,
+  getHotkeyPreset,
+  exportEdl,
+  exportFcpxml,
+  exportOtioJson,
   type Project,
   type MediaItem,
   type EditTool,
   type ExportJob,
   type ClipId,
+  type HotkeyPresetId,
+  type MediaKind,
 } from "@lumina/core";
 import type { Locale } from "@lumina/i18n";
+import { ensureDemoMedia, exportSequenceApi, probePath } from "../lib/media-api";
 
 export type WorkspaceId = "edit" | "color" | "audio" | "effects" | "export";
 export type ThemeMode = "dark" | "light";
@@ -46,6 +57,9 @@ export interface EditorState {
   selectedMediaId: string | null;
   exportQueue: ExportJob[];
   status: string;
+  hotkeyPreset: HotkeyPresetId;
+  lastAutosaveAt: string | null;
+  interchangePreview: string | null;
   // actions
   setLocale: (locale: Locale) => void;
   setTheme: (theme: ThemeMode) => void;
@@ -57,10 +71,12 @@ export interface EditorState {
   setSnapEnabled: (enabled: boolean) => void;
   selectClip: (id: ClipId | null) => void;
   selectMedia: (id: string | null) => void;
+  setHotkeyPreset: (id: HotkeyPresetId) => void;
   undo: () => void;
   redo: () => void;
   importMediaItems: (items: MediaItem[]) => void;
   addDemoMedia: () => void;
+  loadRealDemoMedia: () => Promise<void>;
   dropMediaOnTimeline: (mediaId: string, trackId: string, startTicks: bigint) => void;
   splitAtPlayhead: () => void;
   liftSelected: () => void;
@@ -68,7 +84,12 @@ export interface EditorState {
   moveSelected: (newStart: bigint) => void;
   trimSelected: (patch: { start?: bigint; duration?: bigint; inPoint?: bigint; outPoint?: bigint }) => void;
   toggleTrackMute: (trackId: string) => void;
+  addMarkerAtPlayhead: () => void;
+  setSelectedSpeed: (speed: number) => void;
   queueExport: (presetId: string, outputPath: string, patentAcknowledged: boolean) => void;
+  runSequenceExport: (outputPath: string, dryRun?: boolean) => Promise<void>;
+  exportInterchange: (kind: "edl" | "fcpxml" | "otio") => void;
+  maybeAutosave: () => void;
   tickPlayback: (dtSeconds: number) => void;
 }
 
@@ -100,6 +121,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     selectedMediaId: null,
     exportQueue: [],
     status: "Ready",
+    hotkeyPreset: "lumina",
+    lastAutosaveAt: null,
+    interchangePreview: null,
 
     setLocale: (locale) => set({ locale }),
     setTheme: (theme) => {
@@ -114,6 +138,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setSnapEnabled: (snapEnabled) => set({ snapEnabled }),
     selectClip: (selectedClipId) => set({ selectedClipId }),
     selectMedia: (selectedMediaId) => set({ selectedMediaId }),
+    setHotkeyPreset: (hotkeyPreset) => {
+      void getHotkeyPreset(hotkeyPreset);
+      set({ hotkeyPreset, status: `Hotkeys: ${hotkeyPreset}` });
+    },
 
     undo: () => {
       const { history, revision } = get();
@@ -133,52 +161,68 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     addDemoMedia: () => {
-      const items: MediaItem[] = [
-        createMediaItem({
-          kind: "video",
-          name: "Demo Bars.mp4",
-          path: "demo://color-bars",
-          metadata: {
-            duration: secondsToTicks(12),
-            width: 1920,
-            height: 1080,
-            frameRate: FRAME_RATES.fps25,
-            hasVideo: true,
-            hasAudio: true,
-            videoCodec: "h264",
-            audioCodec: "aac",
-            audioChannels: 2,
-            audioSampleRate: 48000,
-          },
-        }),
-        createMediaItem({
-          kind: "audio",
-          name: "Demo Tone.wav",
-          path: "demo://tone",
-          metadata: {
-            duration: secondsToTicks(12),
-            hasVideo: false,
-            hasAudio: true,
-            audioCodec: "pcm",
-            audioChannels: 2,
-            audioSampleRate: 48000,
-          },
-        }),
-        createMediaItem({
-          kind: "image",
-          name: "Still Gradient.png",
-          path: "demo://gradient",
-          metadata: {
-            duration: secondsToTicks(5),
-            width: 1920,
-            height: 1080,
-            hasVideo: true,
-            hasAudio: false,
-          },
-        }),
+      void get().loadRealDemoMedia();
+    },
+
+    loadRealDemoMedia: async () => {
+      const demo = await ensureDemoMedia();
+      if (!demo) {
+        // Offline fallback placeholders
+        const items: MediaItem[] = [
+          createMediaItem({
+            kind: "video",
+            name: "Demo Bars.mp4",
+            path: "demo://color-bars",
+            metadata: {
+              duration: secondsToTicks(8),
+              width: 1280,
+              height: 720,
+              frameRate: FRAME_RATES.fps25,
+              hasVideo: true,
+              hasAudio: true,
+            },
+          }),
+        ];
+        get().importMediaItems(items);
+        set({ selectedMediaId: items[0]!.id, status: "Demo placeholders (API offline)" });
+        return;
+      }
+
+      const entries: Array<{ path: string; name: string; fallbackKind: MediaKind }> = [
+        { path: demo.video, name: "Demo Bars.mp4", fallbackKind: "video" },
+        { path: demo.audio, name: "Demo Tone.wav", fallbackKind: "audio" },
+        { path: demo.image, name: "Still Gradient.png", fallbackKind: "image" },
       ];
+      const items: MediaItem[] = [];
+      for (const entry of entries) {
+        const probed = await probePath(entry.path);
+        const durationStr = probed?.metadata.duration;
+        const duration =
+          typeof durationStr === "string" || typeof durationStr === "number"
+            ? BigInt(durationStr)
+            : secondsToTicks(entry.fallbackKind === "image" ? 5 : 8);
+        items.push(
+          createMediaItem({
+            kind: (probed?.kind as MediaKind) ?? entry.fallbackKind,
+            name: entry.name,
+            path: entry.path,
+            metadata: {
+              duration,
+              hasVideo: entry.fallbackKind !== "audio",
+              hasAudio: entry.fallbackKind !== "image",
+              ...(entry.fallbackKind !== "audio"
+                ? {
+                    width: Number(probed?.metadata.width) || 1280,
+                    height: Number(probed?.metadata.height) || 720,
+                    frameRate: FRAME_RATES.fps25,
+                  }
+                : { audioChannels: 2, audioSampleRate: 48000 }),
+            },
+          }),
+        );
+      }
       get().importMediaItems(items);
-      set({ selectedMediaId: items[0]!.id });
+      set({ selectedMediaId: items[0]!.id, status: "Loaded real demo media (ffmpeg)" });
     },
 
     dropMediaOnTimeline: (mediaId, trackId, startTicks) => {
@@ -286,6 +330,25 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set(bump(sync(history), revision));
     },
 
+    addMarkerAtPlayhead: () => {
+      const { history, playheadTicks, revision } = get();
+      history.push(new AddMarkerCommand(playheadTicks, "Marker"));
+      set(bump(sync(history), revision, "Marker added"));
+    },
+
+    setSelectedSpeed: (speed) => {
+      const { history, project, selectedClipId, revision } = get();
+      if (!selectedClipId) return;
+      const sequence = requireActiveSequence(project);
+      for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
+        if (track.clips.some((c) => c.id === selectedClipId)) {
+          history.push(new SetClipSpeedCommand(track.id, selectedClipId, speed, true));
+          set(bump(sync(history), revision, `Speed ${speed}x`));
+          return;
+        }
+      }
+    },
+
     queueExport: (presetId, outputPath, patentAcknowledged) => {
       try {
         const sequence = requireActiveSequence(get().project);
@@ -304,10 +367,55 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
     },
 
+    runSequenceExport: async (outputPath, dryRun = false) => {
+      const { project } = get();
+      const sequence = requireActiveSequence(project);
+      set({ status: dryRun ? "Building export graph…" : "Exporting sequence…" });
+      const result = await exportSequenceApi({
+        sequence,
+        media: project.media,
+        outputPath,
+        dryRun,
+      });
+      if (!result.ok) {
+        set({ status: result.error ?? "Export failed" });
+        return;
+      }
+      set({
+        status: dryRun
+          ? `Export dry-run: ${result.description ?? "ok"}`
+          : `Exported → ${outputPath}`,
+      });
+    },
+
+    exportInterchange: (kind) => {
+      const { project } = get();
+      const sequence = requireActiveSequence(project);
+      let text = "";
+      if (kind === "edl") text = exportEdl(sequence, project.media);
+      else if (kind === "fcpxml") text = exportFcpxml(sequence, project.media, project.name);
+      else text = exportOtioJson(sequence, project.media);
+      set({ interchangePreview: text, status: `Exported ${kind.toUpperCase()} to preview` });
+    },
+
+    maybeAutosave: () => {
+      const { project, lastAutosaveAt } = get();
+      if (!shouldAutosave(lastAutosaveAt, project.settings.autoSaveMinutes)) return;
+      const snap = createAutosaveSnapshot(project, "interval");
+      try {
+        localStorage.setItem("lumina.autosave", snap.json);
+        localStorage.setItem("lumina.autosave.at", snap.savedAt);
+      } catch {
+        // ignore quota
+      }
+      set({ lastAutosaveAt: snap.savedAt, status: `Autosaved ${snap.savedAt}` });
+    },
+
     tickPlayback: (dtSeconds) => {
       if (!get().playing) return;
       const next = get().playheadTicks + secondsToTicks(dtSeconds);
       set({ playheadTicks: next });
+      get().maybeAutosave();
     },
   };
 });

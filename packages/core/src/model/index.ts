@@ -6,3 +6,4 @@ export * from "./track.js";
 export * from "./media.js";
 export * from "./sequence.js";
 export * from "./project.js";
+export * from "./mask.js";

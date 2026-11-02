@@ -8,6 +8,8 @@ export function Inspector() {
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectedMediaId = useEditorStore((s) => s.selectedMediaId);
   const trimSelected = useEditorStore((s) => s.trimSelected);
+  const setSelectedSpeed = useEditorStore((s) => s.setSelectedSpeed);
+  const addMarkerAtPlayhead = useEditorStore((s) => s.addMarkerAtPlayhead);
   const sequence = requireActiveSequence(project);
 
   const clip = [...sequence.videoTracks, ...sequence.audioTracks]
@@ -30,7 +32,7 @@ export function Inspector() {
             <Field label="Duration" value={`${ticksToSeconds(clip.clip.duration).toFixed(2)}s`} />
             <Field label="Speed" value={`${clip.clip.speed}x`} />
             <Field label="Blend" value={clip.clip.blendMode} />
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               <button
                 type="button"
                 className="lum-btn"
@@ -41,6 +43,18 @@ export function Inspector() {
                 }
               >
                 Halve duration
+              </button>
+              <button type="button" className="lum-btn" onClick={() => setSelectedSpeed(0.5)}>
+                0.5x
+              </button>
+              <button type="button" className="lum-btn" onClick={() => setSelectedSpeed(1)}>
+                1x
+              </button>
+              <button type="button" className="lum-btn" onClick={() => setSelectedSpeed(2)}>
+                2x
+              </button>
+              <button type="button" className="lum-btn" onClick={() => addMarkerAtPlayhead()}>
+                Marker
               </button>
             </div>
             <div className="text-muted text-xs uppercase tracking-wide pt-2">Effects</div>

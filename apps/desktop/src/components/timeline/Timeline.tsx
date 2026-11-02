@@ -56,7 +56,19 @@ export function Timeline() {
           V
         </button>
         <button type="button" className={`lum-btn ${tool === "razor" ? "border-accent" : ""}`} onClick={() => setTool("razor")}>
-          B
+          C
+        </button>
+        <button type="button" className={`lum-btn ${tool === "ripple" ? "border-accent" : ""}`} onClick={() => setTool("ripple")}>
+          Ripple
+        </button>
+        <button type="button" className={`lum-btn ${tool === "roll" ? "border-accent" : ""}`} onClick={() => setTool("roll")}>
+          Roll
+        </button>
+        <button type="button" className={`lum-btn ${tool === "slip" ? "border-accent" : ""}`} onClick={() => setTool("slip")}>
+          Slip
+        </button>
+        <button type="button" className={`lum-btn ${tool === "slide" ? "border-accent" : ""}`} onClick={() => setTool("slide")}>
+          Slide
         </button>
         <button type="button" className="lum-btn" onClick={() => splitAtPlayhead()}>
           {t(locale, "action.split")}

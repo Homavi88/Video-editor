@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { useEditorStore } from "./editor-store";
-import { requireActiveSequence } from "@lumina/core";
+import {
+  requireActiveSequence,
+  createMediaItem,
+  secondsToTicks,
+  FRAME_RATES,
+} from "@lumina/core";
 
 describe("editor store", () => {
   beforeEach(() => {
@@ -10,12 +15,26 @@ describe("editor store", () => {
       selectedClipId: null,
       playheadTicks: 0n,
       playing: false,
+      project,
     });
   });
 
-  it("imports demo media and places a clip", () => {
+  it("imports media and places a clip", () => {
     const store = useEditorStore.getState();
-    store.addDemoMedia();
+    const media = createMediaItem({
+      kind: "video",
+      name: "clip.mp4",
+      path: "/tmp/clip.mp4",
+      metadata: {
+        duration: secondsToTicks(4),
+        width: 1280,
+        height: 720,
+        frameRate: FRAME_RATES.fps25,
+        hasVideo: true,
+        hasAudio: false,
+      },
+    });
+    store.importMediaItems([media]);
     const mediaId = useEditorStore.getState().project.media[0]!.id;
     const sequence = requireActiveSequence(useEditorStore.getState().project);
     const trackId = sequence.videoTracks[sequence.videoTracks.length - 1]!.id;
